@@ -87,6 +87,13 @@ int at_params_list_init(struct at_param_list *list,
 
 	list->param_count = max_params_count;
 
+	for (size_t i = 0; i < list->param_count;
+			++i) {
+		struct at_param *params = list->params;
+
+		at_param_init(&params[i]);
+	}
+
 	return 0;
 }
 
@@ -140,7 +147,7 @@ int at_params_clear(struct at_param_list *list, size_t index)
 }
 
 
-int at_params_short_put(const struct at_param_list *list, size_t index,
+int at_params_put_short(const struct at_param_list *list, size_t index,
 			u16_t value)
 {
 	if (list == NULL || list->params == NULL) {
@@ -161,7 +168,7 @@ int at_params_short_put(const struct at_param_list *list, size_t index,
 }
 
 
-int at_params_int_put(const struct at_param_list *list, size_t index,
+int at_params_put_int(const struct at_param_list *list, size_t index,
 			u32_t value)
 {
 	if (list == NULL || list->params == NULL) {
@@ -182,7 +189,7 @@ int at_params_int_put(const struct at_param_list *list, size_t index,
 }
 
 
-int at_params_string_put(const struct at_param_list *list, size_t index,
+int at_params_put_string(const struct at_param_list *list, size_t index,
 			 const char *str, size_t str_len)
 {
 	if (list == NULL || list->params == NULL || str == NULL) {
@@ -195,7 +202,7 @@ int at_params_string_put(const struct at_param_list *list, size_t index,
 		return -EINVAL;
 	}
 
-	char *param_value = k_malloc(str_len + 1);
+	char *param_value = (char *)k_malloc(str_len + 1);
 
 	if (param_value == NULL) {
 		return -ENOMEM;
@@ -212,7 +219,7 @@ int at_params_string_put(const struct at_param_list *list, size_t index,
 }
 
 
-int at_params_size_get(const struct at_param_list *list, size_t index,
+int at_params_get_size(const struct at_param_list *list, size_t index,
 			size_t *len)
 {
 	if (list == NULL || list->params == NULL || len == NULL) {
@@ -230,7 +237,7 @@ int at_params_size_get(const struct at_param_list *list, size_t index,
 }
 
 
-int at_params_short_get(const struct at_param_list *list, size_t index,
+int at_params_get_short(const struct at_param_list *list, size_t index,
 			u16_t *value)
 {
 	if (list == NULL || list->params == NULL || value == NULL) {
@@ -252,7 +259,7 @@ int at_params_short_get(const struct at_param_list *list, size_t index,
 }
 
 
-int at_params_int_get(const struct at_param_list *list, size_t index,
+int at_params_get_int(const struct at_param_list *list, size_t index,
 			u32_t *value)
 {
 	if (list == NULL || list->params == NULL || value == NULL) {
@@ -274,7 +281,7 @@ int at_params_int_get(const struct at_param_list *list, size_t index,
 }
 
 
-int at_params_string_get(const struct at_param_list *list, size_t index,
+int at_params_get_string(const struct at_param_list *list, size_t index,
 			char *value, size_t len)
 {
 	if (list == NULL || list->params == NULL || value == NULL) {
@@ -302,7 +309,7 @@ int at_params_string_get(const struct at_param_list *list, size_t index,
 }
 
 
-u32_t at_params_valid_count_get(const struct at_param_list *list)
+u32_t at_params_get_valid_count(const struct at_param_list *list)
 {
 	if (list == NULL || list->params == NULL) {
 		return 0;
