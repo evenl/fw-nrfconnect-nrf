@@ -51,7 +51,9 @@ void IPC_IRQHandler(void);
 
 int32_t bsd_os_timedwait(uint32_t context, uint32_t timeout)
 {
-	/* TODO: to be implemented */
+
+	k_sleep(K_MSEC(10));
+
 	return 0;
 }
 
