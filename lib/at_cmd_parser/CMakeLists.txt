@@ -6,8 +6,10 @@
 
 zephyr_library()
 zephyr_library_sources(
-    src/at_cmd_parser.c
-    src/at_utils.c
-    src/at_params.c
+	src/at_cmd_parser.c
+	src/at_utils.c
+	src/at_params.c
+	src/at_cmd_decoder.c
+
 )
 zephyr_include_directories(include)
