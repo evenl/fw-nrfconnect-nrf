@@ -1,32 +1,9 @@
 #include <zephyr.h>
 
 #include <at_cmd_parser.h>
-#include <at_params.h>
 #include <at_cmd_decoder.h>
 
 #include <string.h>
-
-struct at_cmd_cb {
-	/**
-	 * @brief Name of the AT command received as a response.
-	 */
-	const char *cmd_str;
-
-	enum at_cmd_models model;
-
-	/**
-	 * @brief Function used to decode the AT command response parameters.
-	 *
-	 * @param[in] p_at_params   Parameters of the AT command as a String.
-	 *                          Cannot be null.
-	 * @param[out] p_out        Pointer to the output structure to populate.
-	 *                          Can be null if not used.
-	 */
-	void* (*at_cmd_decode_handler)(struct at_param_list *param_list,
-				       u32_t valid_params);
-};
-
-static at_cmd_decoder_handler_t at_cmd_decoder_handler;
 
 /* Forward declarations. */
 static void *at_CEREG_decode(struct at_param_list *param_list,
@@ -44,15 +21,17 @@ static void *at_CMT_decode(struct at_param_list *param_list,
 static void *at_CNUM_decode(struct at_param_list *param_list,
 			    u32_t valid_params);
 
-static const struct at_cmd_cb m_at_cmds[] = {
-	{"+CESQ", AT_CMD_CESQ_MODEL, at_CESQ_decode},
-	{"%CESQ", AT_NOT_CESQ_MODEL, at_NOT_CESQ_decode},
-	{"+CEREG:", AT_CMD_CEREG_MODEL, at_CEREG_decode},
-	{"+CMT:", AT_CMD_CMT_MODEL, at_CMT_decode},
-	{"+CNUM", AT_CMD_CNUM_MODEL, at_CNUM_decode},
-};
+AT_CMD_DECODER_LIST_START(default_decoder_list)
+AT_CMD_DECODER_LIST_ENTRY("+CESQ", AT_CMD_CESQ_MODEL, at_CESQ_decode)
+AT_CMD_DECODER_LIST_ENTRY("%CESQ", AT_NOT_CESQ_MODEL, at_NOT_CESQ_decode)
+AT_CMD_DECODER_LIST_ENTRY("+CEREG:", AT_CMD_CEREG_MODEL, at_CEREG_decode)
+AT_CMD_DECODER_LIST_ENTRY("+CMT:", AT_CMD_CMT_MODEL, at_CMT_decode)
+AT_CMD_DECODER_LIST_ENTRY("+CNUM", AT_CMD_CNUM_MODEL, at_CNUM_decode)
+AT_CMD_DECODER_LIST_END
 
+static struct at_cmd_cb const *at_cmd_decoders = NULL;
 static struct at_param_list param_list;
+static at_cmd_decoder_handler_t at_cmd_decoder_handler;
 
 static void *at_CMT_decode(struct at_param_list *param_list,
 			   u32_t valid_params)
@@ -212,15 +191,16 @@ static void *at_CEREG_decode(struct at_param_list *param_list,
 
 static int get_at_cmd_decode_handler_index(const char * const p_atstring)
 {
-	const struct at_cmd_cb *cb;
+	u16_t i=0;
 
-	for (u8_t i = 0; i < ARRAY_SIZE(m_at_cmds); ++i) {
-		cb = &(m_at_cmds[i]);
-		size_t len = strlen(cb->cmd_str);
+	while(at_cmd_decoders[i].at_cmd_decode_handler != NULL) {
+		size_t len = strlen(at_cmd_decoders[i].cmd_str);
 
-		if (!strncmp(cb->cmd_str, p_atstring, len)) {
+		if (!strncmp(at_cmd_decoders[i].cmd_str, p_atstring, len)) {
 			return i;
 		}
+
+		i++;
 	}
 
 	return -EIO;
@@ -235,7 +215,7 @@ int at_cmd_decode(char *at_message)
 	}
 
 	u32_t valid_params;
-	u32_t ofs = strlen(m_at_cmds[model_index].cmd_str)+1;
+	u32_t ofs = strlen(at_cmd_decoders[model_index].cmd_str)+1;
 	void  *model_ptr;
 
 	/* Parse response parameters. */
@@ -251,11 +231,11 @@ int at_cmd_decode(char *at_message)
 		return -EIO;
 	}
 
-	model_ptr = m_at_cmds[model_index].at_cmd_decode_handler(&param_list,
+	model_ptr = at_cmd_decoders[model_index].at_cmd_decode_handler(&param_list,
 							      valid_params);
 
 	if (at_cmd_decoder_handler && model_ptr) {
-		at_cmd_decoder_handler(m_at_cmds[model_index].model,
+		at_cmd_decoder_handler(at_cmd_decoders[model_index].model,
 				       model_ptr);
 	}
 
@@ -264,9 +244,15 @@ int at_cmd_decode(char *at_message)
 	return 0;
 }
 
-int at_cmd_decoder_init(void)
+int at_cmd_decoder_init(struct at_cmd_cb const *decoder_list)
 {
 	at_params_list_init(&param_list, 10);
+
+	if (decoder_list != NULL) {
+		at_cmd_decoders = decoder_list;
+	} else {
+		at_cmd_decoders = default_decoder_list;
+	}
 
 	return 0;
 }
@@ -274,6 +260,10 @@ int at_cmd_decoder_init(void)
 int at_cmd_decoder_deinit(void)
 {
 	at_params_list_free(&param_list);
+
+	if (at_cmd_decoders != default_decoder_list) {
+		at_cmd_decoders = default_decoder_list;
+	}
 
 	return 0;
 }

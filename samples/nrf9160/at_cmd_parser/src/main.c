@@ -101,7 +101,7 @@ void main(void)
 	printk("The AT command parser sample started\n");
 
 	at_cmd_interface_set_handler(received_data_handler);
-	at_cmd_decoder_init();
+	at_cmd_decoder_init(NULL);
 	at_cmd_decoder_set_handler(process_model);
 
 	if (at_cmd_interface_write("AT+CEREG=2") != AT_CMD_OK) {
@@ -117,7 +117,7 @@ void main(void)
 	}
 
 	if (at_cmd_interface_write("AT%CESQ=1") != AT_CMD_OK) {
-		printk("Failed to send AT%CESQ=1 command\n");
+		printk("Failed to send AT%%CESQ=1 command\n");
 	}
 
 	if (at_cmd_interface_write("AT+CNUM") != AT_CMD_OK) {
