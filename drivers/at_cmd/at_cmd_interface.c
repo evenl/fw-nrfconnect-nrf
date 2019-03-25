@@ -16,28 +16,28 @@ LOG_MODULE_REGISTER(at_cmd_interface);
 
 #include <at_cmd_interface.h>
 
-#define RESPONSE_MAX_LEN	CONFIG_AT_CMD_RESPONSE_MAX_LEN
-#define THREAD_PRIORITY		K_PRIO_PREEMPT(CONFIG_AT_CMD_THREAD_PRIO)
+#define RESPONSE_MAX_LEN  CONFIG_AT_CMD_RESPONSE_MAX_LEN
+#define THREAD_PRIORITY   K_PRIO_PREEMPT(CONFIG_AT_CMD_THREAD_PRIO)
 
 #define AT_CMD_OK_STR    "OK"
 #define AT_CMD_ERROR_STR "ERROR"
 #define AT_CMD_CMS_STR   "+CMS:"
 #define AT_CMD_CME_STR   "+CME:"
 
-static int common_socket_fd;
-static struct k_thread socket_thread;
 static K_THREAD_STACK_DEFINE(socket_thread_stack, 2048);
-
-K_MSGQ_DEFINE(return_code_msq, sizeof(enum at_cmd_return_code), 2, 4);
+K_MSGQ_DEFINE(return_code_msq, sizeof(enum at_cmd_rc), 2, 4);
 static K_SEM_DEFINE(cmd_pending, 1, 1);
 
-static at_cmd_interface_handler_t received_data_handler;
+static int              common_socket_fd;
+static int              last_error;
+static struct k_thread  socket_thread;
+static at_cmd_handler_t received_data_handler;
+static char             *response_buf;
+static u32_t            response_buf_len;
 
-static int  last_error;
-
-static enum at_cmd_return_code get_return_code(char *buf)
+static enum at_cmd_rc get_return_code(char *buf)
 {
-	enum at_cmd_return_code return_code = AT_CMD_NOT_RETURN_CODE;
+	enum at_cmd_rc return_code = AT_CMD_NO_RETURN_CODE;
 	char *tmpstr = NULL;
 
 	do {
@@ -86,7 +86,8 @@ static void socket_thread_fn(void *arg1, void *arg2, void *arg3)
 {
 	int bytes_read;
 	char buf[RESPONSE_MAX_LEN];
-	enum at_cmd_return_code return_code;
+	enum at_cmd_rc return_code;
+	bool write_with_response = false;
 
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
@@ -104,27 +105,39 @@ static void socket_thread_fn(void *arg1, void *arg2, void *arg3)
 
 		return_code = get_return_code(buf);
 
-		if (return_code != AT_CMD_NOT_RETURN_CODE) {
+		if (return_code != AT_CMD_NO_RETURN_CODE) {
+			if ((response_buf_len > 0) &&
+			    (return_code != AT_CMD_NO_RETURN_CODE)) {
+				if(response_buf_len >= strlen(buf)) {
+					strcpy(response_buf, buf);
+					response_buf_len = 0;
+					write_with_response = true;
+				} else {
+					response_buf = NULL;
+				}
+			}
+
 			k_msgq_put(&return_code_msq, &return_code, K_FOREVER);
+		} else {
+			write_with_response = false;
 		}
 
 		if (strlen(buf) == 0) {
 			continue;
 		}
 
-		if (received_data_handler) {
-			received_data_handler(buf, strlen(buf));
-		} else {
+		if (received_data_handler && !write_with_response) {
+				received_data_handler(buf, strlen(buf));
+		}  else {
 			LOG_DBG("No handler registerd for received data");
 		}
-
 	}
 }
 
-enum at_cmd_return_code at_cmd_interface_write(const char *const cmd)
+enum at_cmd_rc at_cmd_write(const char *const cmd)
 {
 	int bytes_sent;
-	enum at_cmd_return_code return_code;
+	enum at_cmd_rc return_code;
 
 	k_sem_take(&cmd_pending, K_FOREVER);
 
@@ -140,17 +153,31 @@ enum at_cmd_return_code at_cmd_interface_write(const char *const cmd)
 	return return_code;
 }
 
-void at_cmd_interface_set_handler(at_cmd_interface_handler_t handler)
+enum at_cmd_rc at_cmd_write_with_response(const char *const cmd,
+					  char *buf,
+					  u32_t buf_len)
+{
+	enum at_cmd_rc return_code;
+
+	response_buf     = buf;
+	response_buf_len = buf_len;
+
+	return_code = at_cmd_write(cmd);
+
+	return return_code;
+}
+
+void at_cmd_set_handler(at_cmd_handler_t handler)
 {
 	received_data_handler = handler;
 }
 
-int at_cmd_interface_get_last_error(void)
+int at_cmd_get_last_error(void)
 {
 	return last_error;
 }
 
-static int at_cmd_interface_init(struct device *dev)
+static int at_cmd_init(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
@@ -170,6 +197,5 @@ static int at_cmd_interface_init(struct device *dev)
 	return 0;
 }
 
-SYS_INIT(at_cmd_interface_init, APPLICATION, \
-		CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(at_cmd_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
 

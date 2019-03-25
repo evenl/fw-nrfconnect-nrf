@@ -179,6 +179,8 @@ int at_parser_max_params_from_str(char *str,
 				  struct at_param_list *list,
 				  size_t max_params_count)
 {
+	size_t i = 0;
+
 	if (str == NULL || list == NULL || list->params == NULL) {
 		return -EINVAL;
 	}
@@ -189,7 +191,7 @@ int at_parser_max_params_from_str(char *str,
 
 	(void)at_params_get_space_count(&str);
 
-	for (size_t i = 0; i < max_params_count; ++i) {
+	while (i < max_params_count) {
 
 		size_t consumed;
 		int err = at_parse_param(str, list, i, &consumed);
@@ -198,7 +200,10 @@ int at_parser_max_params_from_str(char *str,
 			return err;
 		}
 
-		str += consumed;
+		if(consumed > 0) {
+			i++;
+			str += consumed;
+		}
 
 		if (i < (max_params_count - 1) && *str != '\0') {
 			if (*str == AT_CMD_PARAM_SEPARATOR) {

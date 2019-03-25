@@ -1,13 +1,10 @@
 /*
- * Copyright (c) 2018 Nordic Semiconductor ASA
+ * Copyright (c) 2019 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
  */
 
 #include <zephyr.h>
-#include <stdio.h>
-#include <uart.h>
-#include <string.h>
 
 #include <at_cmd_interface.h>
 #include <at_cmd_decoder.h>
@@ -84,7 +81,7 @@ void process_model(enum at_cmd_models model, void *model_ptr)
 void received_data_handler(char *response, size_t response_len)
 {
 	if (at_cmd_decode(response) != 0) {
-		printk("Could not decode AT command response\n");
+		printk("Could not decode AT command response %s\n",response);
 	}
 }
 
@@ -98,36 +95,43 @@ void received_data_handler(char *response, size_t response_len)
  */
 void main(void)
 {
+	char buf[32];
+
 	printk("The AT command parser sample started\n");
 
-	at_cmd_interface_set_handler(received_data_handler);
+	at_cmd_set_handler(received_data_handler);
 	at_cmd_decoder_init(NULL);
 	at_cmd_decoder_set_handler(process_model);
 
-	if (at_cmd_interface_write("AT+CEREG=2") != AT_CMD_OK) {
+	if (at_cmd_write("AT+CEREG=2") != AT_CMD_OK) {
 		printk("Failed to send AT+CEREG=2 command\n");
 	}
 
-	if (at_cmd_interface_write("AT+CFUN=1") != AT_CMD_OK) {
+	if (at_cmd_write("AT+CFUN=1") != AT_CMD_OK) {
 		printk("Failed to send AT+CFUN=1 command\n");
 	}
 
-	if (at_cmd_interface_write("AT+CNMI=3,2,0,1") != AT_CMD_OK) {
+	/* Make sure the modem is ready */
+	k_sleep(K_MSEC(1000));
+
+	if (at_cmd_write("AT+CNMI=3,2,0,1") != AT_CMD_OK) {
 		printk("Failed to send AT+CNMI=3,2,0,1 command\n");
 	}
 
-	if (at_cmd_interface_write("AT%CESQ=1") != AT_CMD_OK) {
+	if (at_cmd_write("AT%CESQ=1") != AT_CMD_OK) {
 		printk("Failed to send AT%%CESQ=1 command\n");
 	}
 
-	if (at_cmd_interface_write("AT+CNUM") != AT_CMD_OK) {
+	if (at_cmd_write("AT+CNUM") != AT_CMD_OK) {
 		printk("Failed to send AT+CNUM command\n");
 	};
 
 	while (1) {
-		if (at_cmd_interface_write("AT+CESQ") != AT_CMD_OK) {
+		if (at_cmd_write_with_response("AT+CESQ", buf, 32) != AT_CMD_OK) {
 			printk("Failed to send AT+CESQ command");
+		} else {
+			printk("AT+CESQ command response: %s\n", buf);
 		}
-		k_sleep(5000);
+		k_sleep(K_MSEC(5000));
 	}
 }
