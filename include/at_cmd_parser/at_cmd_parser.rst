@@ -20,3 +20,4 @@ API documentation
 .. doxygengroup:: at_cmd_parser
    :project: nrf
    :members:
+

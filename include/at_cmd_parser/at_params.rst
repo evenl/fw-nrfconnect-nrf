@@ -24,3 +24,4 @@ API documentation
 .. doxygengroup:: at_params
    :project: nrf
    :members:
+

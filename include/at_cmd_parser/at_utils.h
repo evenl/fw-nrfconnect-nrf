@@ -1,5 +1,10 @@
 /**@file at_utils.h
  *
+ * @defgroup at_cmd_parser_utils AT Command util functions
+ * @ingroup at_cmd_parser
+ *
+ * @{
+ *
  * @brief AT parser utility functions to deal with strings.
  *
  */
@@ -13,7 +18,7 @@
 #ifndef AT_UTILS_H_
 #define AT_UTILS_H_
 
-#include <zephyr/types.h>
+#include <stdint.h>
 
 /**
  * @brief Remove spaces from beginning of returned string
@@ -27,7 +32,7 @@
  * character.
  * @return number of removed spaces.
  */
-u32_t at_params_space_count_get(char **str);
+u32_t at_params_get_space_count(char **str);
 
 
 /**
@@ -38,6 +43,9 @@ u32_t at_params_space_count_get(char **str);
  * @param[in] str Pointer to AT command string
  * @return length of first AT command.
  */
-size_t at_params_cmd_length_get(const char *str);
+size_t at_params_get_cmd_length(const char *str);
+
+/** @} */
 
 #endif /* AT_UTILS_H_ */
+
