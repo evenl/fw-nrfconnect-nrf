@@ -8,12 +8,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <zephyr.h>
-#include <zephyr/types.h>
 
-#include "at_utils.h"
+#include <at_cmd_parser/at_utils.h>
 
-u32_t at_params_space_count_get(char **str)
+u32_t at_params_get_space_count(const char **str)
 {
 	if ((!str) || (!(*str))) {
 		return 0;
@@ -28,17 +26,18 @@ u32_t at_params_space_count_get(char **str)
 	return space_count;
 }
 
-size_t at_params_cmd_length_get(const char *str)
+size_t at_params_get_cmd_length(const char *const str)
 {
 	if (str == NULL) {
 		return 0;
 	}
 
+	const char *cmd = (const char *)str;
 	size_t len = 0;
 
-	while (*str && (*str != '?') && (*str != ';')) {
+	while (*cmd && (*cmd != '?') && (*cmd != ';')) {
 		len++;
-		str++;
+		cmd++;
 	}
 	return len;
 }

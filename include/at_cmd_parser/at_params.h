@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
  */
 
-#ifndef AT_PARAMS_H_
-#define AT_PARAMS_H_
-
-/**@file at_params.h
+/**
+ * @file at_params.h
  *
  * @brief Store a list of AT command/response parameters.
  * @defgroup at_params AT command/response parameters
@@ -21,36 +19,46 @@
  * cannot be changed. All parameters values are copied in the list.
  * Parameters should be cleared to free that memory. Getter and setter
  * methods are available to read parameter values.
- *
  */
+#ifndef AT_PARAMS_H__
+#define AT_PARAMS_H__
 
 #include <zephyr/types.h>
 
-/** Parameter type. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** Parameter types. */
 enum at_param_type {
-	/** Empty parameter. */
-	AT_PARAM_TYPE_EMPTY,
+	/** Invalid parameter, typically a parameter that doesn't exist */
+	AT_PARAM_TYPE_INVALID,
 	/** Parameter of type short. **/
 	AT_PARAM_TYPE_NUM_SHORT,
 	/** Parameter of type integer. **/
 	AT_PARAM_TYPE_NUM_INT,
 	/** Parameter of type string. **/
-	AT_PARAM_TYPE_STRING
+	AT_PARAM_TYPE_STRING,
+	/** Parameter of type array **/
+	AT_PARAM_TYPE_ARRAY,
+	/** Empty or optional parameter that should be skipped. **/
+	AT_PARAM_TYPE_EMPTY,
 };
 
 /** Parameter value. */
 union at_param_value {
-	/** Short value. */
-	u16_t short_val;
 	/** Integer value. **/
 	u32_t int_val;
 	/** String value. **/
 	char *str_val;
+	/** Array of u32_t */
+	u32_t *array_val;
 };
 
 /** Parameter consisting of parameter type and value. */
 struct at_param {
-	enum at_param_type type;
+	enum at_param_type   type;
+	size_t               size;
 	union at_param_value value;
 };
 
@@ -79,9 +87,7 @@ struct at_param_list {
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int at_params_list_init(struct at_param_list *list,
-			     size_t max_params_count);
-
+int at_params_list_init(struct at_param_list *list, size_t max_params_count);
 
 /**
  * @brief Clear/reset all parameter types and values.
@@ -92,7 +98,6 @@ int at_params_list_init(struct at_param_list *list,
  */
 void at_params_list_clear(struct at_param_list *list);
 
-
 /**
  * @brief Free a list of parameters.
  *
@@ -101,7 +106,6 @@ void at_params_list_clear(struct at_param_list *list);
  * @param[in] list Parameter list to free.
  */
 void at_params_list_free(struct at_param_list *list);
-
 
 /**
  * @brief Clear/reset a parameter type and value.
@@ -113,7 +117,6 @@ void at_params_list_free(struct at_param_list *list);
  *           Otherwise, a (negative) error code is returned.
  */
 int at_params_clear(struct at_param_list *list, size_t index);
-
 
 /**
  * @brief Add a parameter in the list at the specified index and assign it a
@@ -131,7 +134,6 @@ int at_params_clear(struct at_param_list *list, size_t index);
 int at_params_short_put(const struct at_param_list *list, size_t index,
 			u16_t value);
 
-
 /**
  * @brief Add a parameter in the list at the specified index and assign it an
  * integer value.
@@ -146,8 +148,7 @@ int at_params_short_put(const struct at_param_list *list, size_t index,
  *           Otherwise, a (negative) error code is returned.
  */
 int at_params_int_put(const struct at_param_list *list, size_t index,
-			u32_t value);
-
+		      u32_t value);
 
 /**
  * @brief Add a parameter in the list at the specified index and assign it a
@@ -164,12 +165,28 @@ int at_params_int_put(const struct at_param_list *list, size_t index,
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int at_params_string_put(const struct at_param_list *list,
-			size_t index, const char *str,
-			size_t str_len);
-
+int at_params_string_put(const struct at_param_list *list, size_t index,
+			 const char *str, size_t str_len);
 
 /**
+ * array value.
+ *
+ * The parameter array value is copied and added to the list. 
+ * If a parameter exists at this index, it is replaced.
+ *
+ * @param[in] list      Parameter list.
+ * @param[in] index     Index in the list where to put the parameter.
+ * @param[in] array     Pointer to the string value.
+ * @param[in] array_len Number of characters of the string value @p str.
+ *
+ * @retval 0 If the operation was successful.
+ *           Otherwise, a (negative) error code is returned.
+ */
+int at_params_array_put(const struct at_param_list *list, size_t index,
+			const u32_t *array, size_t array_len);
+
+/**
+ * @brief Add a parameter in the list at the specified index and assign it a
  * @brief Get the size of a given parameter (in bytes).
  *
  * A missing parameter has a size of '0'.
@@ -182,8 +199,7 @@ int at_params_string_put(const struct at_param_list *list,
  *           Otherwise, a (negative) error code is returned.
  */
 int at_params_size_get(const struct at_param_list *list, size_t index,
-			size_t *len);
-
+		       size_t *len);
 
 /**
  * @brief Get a parameter value as a short number.
@@ -201,7 +217,6 @@ int at_params_size_get(const struct at_param_list *list, size_t index,
 int at_params_short_get(const struct at_param_list *list, size_t index,
 			u16_t *value);
 
-
 /**
  * @brief Get a parameter value as an integer number.
  *
@@ -216,8 +231,7 @@ int at_params_short_get(const struct at_param_list *list, size_t index,
  *           Otherwise, a (negative) error code is returned.
  */
 int at_params_int_get(const struct at_param_list *list, size_t index,
-			u32_t *value);
-
+		      u32_t *value);
 
 /**
  * @brief Get a parameter value as a string.
@@ -235,8 +249,27 @@ int at_params_int_get(const struct at_param_list *list, size_t index,
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int at_params_string_get(const struct at_param_list *list,
-			size_t index, char *value, size_t len);
+int at_params_string_get(const struct at_param_list *list, size_t index,
+			 char *value, size_t len);
+
+/**
+ * @brief Get a parameter value as a array.
+ *
+ * The parameter type must be a array, or an error is returned.
+ * The string parameter value is copied to the buffer.
+ * @p len must be equal or bigger than the array length,
+ * or an error is returned. The copied string is not null-terminated.
+ *
+ * @param[in] list    Parameter list.
+ * @param[in] index   Parameter index in the list.
+ * @param[in] value   Pointer to the buffer where to copy the value.
+ * @param[in] len     Available space in @p value.
+ *
+ * @retval 0 If the operation was successful.
+ *           Otherwise, a (negative) error code is returned.
+ */
+int at_params_array_get(const struct at_param_list *list, size_t index,
+			u32_t *array, size_t len);
 
 
 /**
@@ -250,4 +283,8 @@ u32_t at_params_valid_count_get(const struct at_param_list *list);
 
 /** @} */
 
-#endif /* AT_PARAMS_H_ */
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* AT_PARAMS_H__ */
