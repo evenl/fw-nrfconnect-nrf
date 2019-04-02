@@ -5,15 +5,15 @@
  */
 
 #include <zephyr.h>
-
-#include <at_cmd_interface.h>
 #include <at_cmd_parser/at_cmd_decoder.h>
 
-/* This callback will be called when ever a message from the modem is completely
- * parsed. The model parameter will contain an identifier for the content
- * of the message, and the model_ptr parameter will contain a pointer to a
- * model of the data.
- */
+
+char *cereg_str = "+CEREG: 2,\"76C1\",\"0102DA04\",7";
+char *cesq_str1 = "%CESQ: 62,3";
+char *cesq_str2 = "+CESQ: 99,99,255,255,255,62";
+char *cmt_str   = "+CMT: \"+4797664513\", 24\r\n"
+		  	"06917429000171040A91747966543100009160402143708006C8329BFD0601";
+
 void process_model(enum at_cmd_models model, void *model_ptr)
 {
 	static u32_t count;
@@ -30,6 +30,14 @@ void process_model(enum at_cmd_models model, void *model_ptr)
 			((struct at_cmd_model_cereg *)model_ptr)->ci);
 		printk("CEREG Act:  %d\n",
 			((struct at_cmd_model_cereg *)model_ptr)->act);
+		break;
+	case AT_CMD_CMT_MODEL:
+		printk("CMT Origin number: %s\n",
+			((struct at_cmd_model_cmt *)model_ptr)->sender_addr);
+		printk("CMT PDU lenght: %d\n",
+			((struct at_cmd_model_cmt *)model_ptr)->pdu_length);
+		printk("CMT PDU payload: %s\n",
+			((struct at_cmd_model_cmt *)model_ptr)->pdu_data);
 		break;
 	case AT_CMD_CESQ_MODEL:
 		printk("CESQ Rxlev: %d\n",
@@ -59,47 +67,15 @@ void process_model(enum at_cmd_models model, void *model_ptr)
 	printk("-------------------------\n");
 }
 
-void received_data_handler(char *response, size_t response_len)
-{
-	if (at_cmd_decode(response) != 0) {
-		printk("Could not decode AT command response %s\n", response);
-	}
-}
-
-/* This sample will enable unsolicited (AT+CEREG=2),
- * then enable signal strength notifications (AT%CESQ=1),
- * then finally poll for extended signal strengt information
- * every 5 seconds.
- */
 void main(void)
 {
-	char buf[32];
-
 	printk("The AT command parser sample started\n");
 
-	at_cmd_set_handler(received_data_handler);
 	at_cmd_decoder_init(NULL);
 	at_cmd_decoder_set_handler(process_model);
 
-	if (at_cmd_write("AT+CEREG=2") != AT_CMD_OK) {
-		printk("Failed to send AT+CEREG=2 command\n");
-	} else {
-		printk("AT+CEREG=2 command returned OK\n");
-	}
-
-	if (at_cmd_write("AT%CESQ=1") != AT_CMD_OK) {
-		printk("Failed to send AT%%CESQ=1 command\n");
-	} else {
-		printk("AT%CESQ=1 command returned OK\n");
-	}
-
-	while (1) {
-		if (at_cmd_write_with_response("AT+CESQ", buf, 32)
-						!= AT_CMD_OK) {
-			printk("Failed to send AT+CESQ command");
-		} else {
-			printk("AT+CESQ command response: %s\n", buf);
-		}
-		k_sleep(K_MSEC(5000));
-	}
+	at_cmd_decode(cereg_str);
+	at_cmd_decode(cesq_str1);
+	at_cmd_decode(cesq_str2);
+	at_cmd_decode(cmt_str);
 }
