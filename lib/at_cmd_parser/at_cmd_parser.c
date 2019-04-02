@@ -15,168 +15,263 @@
 #include <at_cmd_parser/at_cmd_parser.h>
 #include <at_cmd_parser/at_utils.h>
 
-#define AT_CMD_PARAM_SEPARATOR ','
-#define AT_CMD_SEPARATOR ';'
+#define AT_PARAM_SEPARATOR              ','
+#define AT_CMD_SEPARATOR                ':'
+#define AT_CMD_BUFFER_TERMINATOR        0
+#define AT_CMD_STRING_IDENTIFIER        '\"'
+#define AT_STANDARD_NOTIFICATION_PREFIX '+'
+#define AT_PROP_NOTIFICATION_PREFX      '%'
+
+enum at_parser_state {
+	DETECT_TYPE,
+	SEARCH_NEXT_PARAM,
+	STRING,
+	NUMBER,
+	SMS_PDU,
+	NOTIFICATION,
+	OPTIONAL,
+};
+
+static enum at_parser_state state;
+static enum at_parser_state prev_state;
+
+static inline bool is_notification(char chr)
+{
+	if ((chr == AT_STANDARD_NOTIFICATION_PREFIX) ||
+	    (chr == AT_PROP_NOTIFICATION_PREFX)) {
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool is_valid_notification_char(char chr)
+{
+	chr = toupper(chr);
+
+	if ((chr >= 'A') && (chr <= 'Z')) {
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool is_terminated(char chr)
+{
+	if (chr == AT_CMD_BUFFER_TERMINATOR) {
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool is_separator(char chr)
+{
+	if ((chr == AT_PARAM_SEPARATOR) ||
+	    (chr == AT_CMD_SEPARATOR)) {
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool is_lfcr(char chr)
+{
+	if ((chr == '\r') ||
+	    (chr == '\n')) {
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool is_dblquote(char chr)
+{
+	if (chr == '"') {
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool is_number(char chr)
+{
+	if (isdigit(chr) ||
+	    (chr == '-') ||
+	    (chr == '+')) {
+		return true;
+	}
+
+	return false;
+}
+
+static inline void set_new_state(enum at_parser_state new_state)
+{
+	if ((state != SEARCH_NEXT_PARAM) &&
+	    (state != DETECT_TYPE)) {
+		prev_state = state;
+	}
+
+	state     = new_state;
+}
+
+static inline void reset_state(void)
+{
+	prev_state = DETECT_TYPE;
+	state      = DETECT_TYPE;
+}
 
 /*
  * Internal function.
  * Parameters cannot be null. String must be null terminated.
  */
-static int at_parse_param_u32(char *at_str, u32_t *val, size_t *consumed)
+static int at_parse_param(const char ** at_params_str,
+			  struct at_param_list * const list,
+			  const size_t max_params)
 {
-	u32_t value = 0;
-	u32_t check_value;
-	bool negative = false;
+	int index = 0;
+	const char *str = *at_params_str;
 
-	*consumed = 0;
+	reset_state();
 
-	if (*at_str == '-' && isdigit(*(at_str + 1))) {
-		at_str++;
-		(*consumed)++;
-		negative = true;
-	} else if (!isdigit(*at_str)) {
-		return -EINVAL;
+	while ((!is_terminated(*str)) &&
+	       (index < max_params)) {
+
+		str += isspace(*str);
+
+		if (state == DETECT_TYPE) {
+			if ((index == 0) &&
+			    is_notification(*str)) {
+				set_new_state(NOTIFICATION);
+			} else if ((index > 0) &&
+				is_notification(*str)) {
+				break;
+			} else if (is_number(*str)) {
+				set_new_state(NUMBER);
+
+			} else if (is_dblquote(*str)) {
+				set_new_state(STRING);
+				str++;
+
+			} else if (is_lfcr(*str) &&
+			          (prev_state == NUMBER)) {
+
+				while (is_lfcr(*str)) {
+					str++;
+				}
+
+				set_new_state(SMS_PDU);
+			} else if ((index == 0) &&
+				    !is_notification(*str)) {
+				set_new_state(STRING);
+			} else {
+				if (is_separator(*str)) {
+					set_new_state(OPTIONAL);
+				} else {
+					break;
+				}
+			}
+		} else if (state == NOTIFICATION) {
+			const char *start_ptr = str++;
+
+			while (is_valid_notification_char(*str)) {
+				str++;
+			}
+
+			at_params_string_put(list,
+					     index, start_ptr,
+					     str - start_ptr);
+
+			set_new_state(SEARCH_NEXT_PARAM);
+		} else if (state == OPTIONAL) {
+			at_params_empty_put(list, index);
+			str++;
+
+			set_new_state(SEARCH_NEXT_PARAM);
+		} else if (state == STRING) {
+			const char *start_ptr = str;
+
+			while (!is_dblquote(*str) &&
+			       !is_terminated(*str)) {
+				str++;
+			}
+
+			at_params_string_put(list,
+					     index,
+					     start_ptr, str - start_ptr);
+
+			set_new_state(SEARCH_NEXT_PARAM);
+		} else if (state == NUMBER) {
+			int value = atoi(str);
+
+			if (value <= USHRT_MAX) {
+				at_params_short_put(list, index, (u16_t)value);
+			} else {
+				at_params_int_put(list, index, value);
+			}
+
+			set_new_state(SEARCH_NEXT_PARAM);
+		} else if (state == SMS_PDU) {
+			const char *start_ptr = str;
+
+			while (isxdigit(*str)) {
+				str++;
+			}
+
+			at_params_string_put(list,
+					     index,
+					     start_ptr, str - start_ptr);
+
+			set_new_state(SEARCH_NEXT_PARAM);
+		} else if (state == SEARCH_NEXT_PARAM) {
+
+			while (!is_separator(*str) &&
+			       !is_terminated(*str) &&
+			       !is_lfcr(*str)) {
+				str++;
+			}
+
+			if (is_terminated(*str)) {
+				break;
+			}
+
+			if (!is_separator(*(str + 1)) &&
+			    !is_lfcr(*(str + 1))) {
+				str++;
+			}
+
+			index++;
+			set_new_state(DETECT_TYPE);
+		}
 	}
 
-	while ((*at_str != ' ') && (*at_str != AT_CMD_PARAM_SEPARATOR) &&
-	       (*at_str != '\r') && (*at_str != '\n')) {
-		if (!isdigit(*at_str)) {
-			return -EINVAL;
-		}
+	*at_params_str = str;
 
-		if (value > UINT32_MAX - 1) {
-			return -EINVAL;
-		}
-		check_value = value * 10;
-		value = check_value + ((*at_str) - '0');
-
-		if ((value < check_value) || (value == UINT32_MAX)) {
-			return -EINVAL;
-		}
-		at_str++;
-		(*consumed)++;
+	if ((index == max_params) &&
+	    (!is_terminated(*str))) {
+		return E2BIG;
 	}
 
-	if (negative) {
-		value = (u32_t)(0 - value);
+	if (!is_terminated(*str)) {
+		return EAGAIN;
 	}
 
-	*val = value;
 	return 0;
 }
 
-/*
- * Internal function.
- * Parameters cannot be null. String must be null terminated.
- */
-static int at_parse_param_numeric(char *at_str, struct at_param_list *list,
-				  size_t index, size_t *consumed)
-{
-	size_t num_spaces = at_params_get_space_count(&at_str);
-
-	u32_t val;
-	size_t consumed_bytes;
-	u32_t err = at_parse_param_u32(at_str, &val, &consumed_bytes);
-
-	if (err) {
-		*consumed = 0;
-		return -EINVAL;
-	}
-
-	if (val <= USHRT_MAX) {
-		err = at_params_put_short(list, index, (u16_t)(val));
-	} else {
-		err = at_params_put_int(list, index, val);
-	}
-
-	*consumed = consumed_bytes + num_spaces;
-	return 0;
-}
-
-/*
- * Internal function.
- * Parameters cannot be null. String must be null terminated.
- */
-static int at_parse_param_string(char *at_str, struct at_param_list *list,
-				 size_t index, size_t *consumed)
-{
-	u16_t str_len;
-	bool in_double_quotes = false;
-	char *param_value_start = 0;
-
-	if (at_str == NULL || *at_str == '\0') {
-		return 0;
-	}
-
-	size_t spaces = at_params_get_space_count(&at_str);
-
-	if (*at_str == '\"') {
-		at_str++;
-		in_double_quotes = true;
-	}
-
-	param_value_start = at_str;
-
-	while ((*at_str != '\0') &&
-	       ((!in_double_quotes && ((*at_str != AT_CMD_SEPARATOR) ||
-				       (*at_str != AT_CMD_PARAM_SEPARATOR))) ||
-		(in_double_quotes && (*at_str != '\"')))) {
-		at_str++;
-	}
-
-	if (in_double_quotes &&
-	    ((*at_str == AT_CMD_SEPARATOR) || (*at_str == '\0'))) {
-		return -EINVAL;
-	}
-
-	str_len = at_str - param_value_start;
-	*consumed = str_len + spaces;
-
-	if (in_double_quotes && (*at_str == '\"')) {
-		at_str++;
-		*consumed += 2;
-	}
-
-	return at_params_put_string(list, index, param_value_start, str_len);
-}
-
-/*
- * Internal function.
- * Parameters cannot be null. String must be null terminated.
- */
-static int at_parse_param(char *at_params_str, struct at_param_list *list,
-			  size_t index, size_t *consumed)
-{
-	if (at_params_str == NULL || *at_params_str == '\0' ||
-	    *at_params_str == AT_CMD_PARAM_SEPARATOR ||
-	    *at_params_str == AT_CMD_SEPARATOR) {
-		*consumed = 0;
-		(void)at_params_clear(list, index);
-		return 0;
-	}
-
-	int err = at_parse_param_numeric(at_params_str, list, index, consumed);
-
-	if (err) {
-		err = at_parse_param_string(at_params_str, list, index,
-					    consumed);
-	}
-
-	return err;
-}
-
-int at_parser_params_from_str(char *at_params_str, struct at_param_list *list)
+int at_parser_params_from_str(const char **at_params_str,
+			      struct at_param_list * const list)
 {
 	return at_parser_max_params_from_str(at_params_str, list,
 					     list->param_count);
 }
 
-int at_parser_max_params_from_str(char *str, struct at_param_list *list,
+int at_parser_max_params_from_str(const char **at_params_str,
+				  struct at_param_list * const list,
 				  size_t max_params_count)
 {
-	size_t i = 0;
-
-	if (str == NULL || list == NULL || list->params == NULL) {
+	if (at_params_str == NULL || *at_params_str == NULL ||
+	    list == NULL || list->params == NULL) {
 		return -EINVAL;
 	}
 
@@ -184,37 +279,5 @@ int at_parser_max_params_from_str(char *str, struct at_param_list *list,
 
 	max_params_count = MIN(max_params_count, list->param_count);
 
-	(void)at_params_get_space_count(&str);
-
-	while (i < max_params_count) {
-		size_t consumed;
-		int err = at_parse_param(str, list, i, &consumed);
-
-		if (err) {
-			return err;
-		}
-
-		if (consumed > 0) {
-			i++;
-			str += consumed;
-		}
-
-		if (i < (max_params_count - 1) && *str != '\0') {
-			if (*str == AT_CMD_PARAM_SEPARATOR) {
-				str++;
-			} else if ((*str == '\n') || (*str == '\r')) {
-				while ((*str == '\n') || (*str == '\r')) {
-					str++;
-				}
-			} else {
-				return -EINVAL;
-			}
-		}
-
-		if (*str == '\0') {
-			return 0;
-		}
-	}
-
-	return 0;
+	return at_parse_param(at_params_str, list, max_params_count);
 }

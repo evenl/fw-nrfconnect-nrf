@@ -25,7 +25,8 @@ extern "C" {
 #endif
 
 /**
- * @brief Parse a maximum number of AT command or response parameters from a string.
+ * @brief Parse a maximum number of AT command or response parameters
+ *        from a string.
  *
  * This function parses the parameters from @p at_params_str and saves
  * them in @p list. If there are more parameters than @p max_params_count,
@@ -49,8 +50,8 @@ extern "C" {
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int at_parser_max_params_from_str(char *at_params_str,
-				  struct at_param_list *list,
+int at_parser_max_params_from_str(const char **at_params_str,
+				  struct at_param_list * const list,
 				  size_t max_params_count);
 
 /**
@@ -74,7 +75,8 @@ int at_parser_max_params_from_str(char *at_params_str,
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int at_parser_params_from_str(char *at_params_str, struct at_param_list *list);
+int at_parser_params_from_str(const char **at_params_str,
+			      struct at_param_list * const list);
 
 /** @} */
 

@@ -29,9 +29,9 @@ static void *at_CNUM_decode(struct at_param_list *param_list,
 AT_CMD_DECODER_LIST_START(default_decoder_list)
 AT_CMD_DECODER_LIST_ENTRY("+CESQ", AT_CMD_CESQ_MODEL, at_CESQ_decode)
 AT_CMD_DECODER_LIST_ENTRY("%CESQ", AT_NOT_CESQ_MODEL, at_NOT_CESQ_decode)
-AT_CMD_DECODER_LIST_ENTRY("+CEREG:", AT_CMD_CEREG_MODEL, at_CEREG_decode)
-AT_CMD_DECODER_LIST_ENTRY("+CMT:", AT_CMD_CMT_MODEL, at_CMT_decode)
-AT_CMD_DECODER_LIST_ENTRY("+CNUM:", AT_CMD_CNUM_MODEL, at_CNUM_decode)
+AT_CMD_DECODER_LIST_ENTRY("+CEREG", AT_CMD_CEREG_MODEL, at_CEREG_decode)
+AT_CMD_DECODER_LIST_ENTRY("+CMT", AT_CMD_CMT_MODEL, at_CMT_decode)
+AT_CMD_DECODER_LIST_ENTRY("+CNUM", AT_CMD_CNUM_MODEL, at_CNUM_decode)
 AT_CMD_DECODER_LIST_END();
 
 static struct at_cmd_decoder_list const *at_cmd_decoders;
@@ -42,7 +42,7 @@ static void *at_CMT_decode(struct at_param_list *param_list, u32_t valid_params)
 {
 	int err;
 
-	if (valid_params != 3) {
+	if (valid_params != 4) {
 		return NULL;
 	}
 
@@ -53,11 +53,11 @@ static void *at_CMT_decode(struct at_param_list *param_list, u32_t valid_params)
 		return NULL;
 	}
 
-	err = at_params_get_string(param_list, 0, model->sender_addr, 32);
-	err |= at_params_get_short(param_list, 1, &model->pdu_length);
-	err |= at_params_get_string(param_list, 2, model->pdu_data, 160);
+	err = at_params_string_get(param_list, 1, model->sender_addr, 32);
+	err |= at_params_short_get(param_list, 2, &model->pdu_length);
+	err |= at_params_string_get(param_list, 3, model->pdu_data, 160);
 
-	if (err) {
+	if (err < 0) {
 		k_free(model);
 		return NULL;
 	} else {
@@ -70,7 +70,7 @@ static void *at_CESQ_decode(struct at_param_list *param_list,
 {
 	int err;
 
-	if (valid_params != 6) {
+	if (valid_params != 7) {
 		return NULL;
 	}
 
@@ -81,12 +81,12 @@ static void *at_CESQ_decode(struct at_param_list *param_list,
 		return NULL;
 	}
 
-	err = at_params_get_short(param_list, 0, &model->rxlev);
-	err |= at_params_get_short(param_list, 1, &model->ber);
-	err |= at_params_get_short(param_list, 2, &model->rscp);
-	err |= at_params_get_short(param_list, 3, &model->ecno);
-	err |= at_params_get_short(param_list, 4, &model->rsrq);
-	err |= at_params_get_short(param_list, 5, &model->rsrp);
+	err = at_params_short_get(param_list, 1, &model->rxlev);
+	err |= at_params_short_get(param_list, 2, &model->ber);
+	err |= at_params_short_get(param_list, 3, &model->rscp);
+	err |= at_params_short_get(param_list, 4, &model->ecno);
+	err |= at_params_short_get(param_list, 5, &model->rsrq);
+	err |= at_params_short_get(param_list, 6, &model->rsrp);
 
 	if (err) {
 		k_free(model);
@@ -101,7 +101,7 @@ static void *at_NOT_CESQ_decode(struct at_param_list *param_list,
 {
 	int err;
 
-	if (valid_params != 2) {
+	if (valid_params != 3) {
 		return NULL;
 	}
 
@@ -112,8 +112,8 @@ static void *at_NOT_CESQ_decode(struct at_param_list *param_list,
 		return NULL;
 	}
 
-	err = at_params_get_short(param_list, 0, &model->rsrp);
-	err |= at_params_get_short(param_list, 1, &model->threshold_index);
+	err = at_params_short_get(param_list, 1, &model->rsrp);
+	err |= at_params_short_get(param_list, 2, &model->threshold_index);
 
 	if (err) {
 		k_free(model);
@@ -128,7 +128,7 @@ static void *at_CNUM_decode(struct at_param_list *param_list,
 {
 	int err;
 
-	if (valid_params != 2) {
+	if (valid_params != 3) {
 		return NULL;
 	}
 
@@ -139,8 +139,8 @@ static void *at_CNUM_decode(struct at_param_list *param_list,
 		return NULL;
 	}
 
-	err = at_params_get_string(param_list, 0, model->numberx, 32);
-	err |= at_params_get_short(param_list, 1, &model->typex);
+	err = at_params_string_get(param_list, 1, model->numberx, 32);
+	err |= at_params_short_get(param_list, 2, &model->typex);
 
 	if (err < 0) {
 		k_free(model);
@@ -156,7 +156,7 @@ static void *at_CEREG_decode(struct at_param_list *param_list,
 	int err;
 	int ret;
 
-	if (valid_params == 0) {
+	if (valid_params < 2) {
 		return NULL;
 	}
 
@@ -168,20 +168,20 @@ static void *at_CEREG_decode(struct at_param_list *param_list,
 	}
 	memset(model, 0, sizeof(struct at_cmd_model_cereg));
 
-	err = at_params_get_short(param_list, 0, &model->stat);
+	err = at_params_short_get(param_list, 1, &model->stat);
 
-	if (valid_params > 1) {
-		ret = at_params_get_string(param_list, 1, model->tac, 5);
+	if (valid_params > 2) {
+		ret = at_params_string_get(param_list, 2, model->tac, 5);
 		if (ret < 0) {
 			err |= ret;
 		}
 
-		ret = at_params_get_string(param_list, 2, model->ci, 9);
+		ret = at_params_string_get(param_list, 3, model->ci, 9);
 		if (ret < 0) {
 			err |= ret;
 		}
 
-		err |= at_params_get_short(param_list, 3, &model->act);
+		err |= at_params_short_get(param_list, 4, &model->act);
 	}
 
 	if (err) {
@@ -199,7 +199,7 @@ static int get_at_cmd_decode_handler_index(const char *const p_atstring)
 	while (at_cmd_decoders[i].at_cmd_decoder != NULL) {
 		size_t len = strlen(at_cmd_decoders[i].cmd_str);
 
-		if (!strncmp(at_cmd_decoders[i].cmd_str, p_atstring, len)) {
+		if (memcmp(at_cmd_decoders[i].cmd_str, p_atstring, len) == 0) {
 			return i;
 		}
 
@@ -209,40 +209,46 @@ static int get_at_cmd_decode_handler_index(const char *const p_atstring)
 	return -EIO;
 }
 
-int at_cmd_decode(char *at_message)
+int at_cmd_decode(const char *at_message)
 {
-	int model_index = get_at_cmd_decode_handler_index(at_message);
-
-	if (model_index < 0) {
-		return -EIO;
-	}
-
 	u32_t valid_params;
-	u32_t ofs = strlen(at_cmd_decoders[model_index].cmd_str) + 1;
 	void *model_ptr;
+	char id[16];
+	int err;
+	int parse_err;
 
-	/* Parse response parameters. */
-	int err = at_parser_params_from_str(&at_message[ofs], &param_list);
+	do {
+		/* Parse response parameters. */
+		parse_err = at_parser_params_from_str(&at_message, &param_list);
 
-	if (err != 0) {
-		return err;
-	}
-	valid_params = at_params_get_valid_count(&param_list);
+		if ((parse_err != 0) &&
+			(parse_err != EAGAIN)) {
+			return parse_err;
+		}
+		valid_params = at_params_valid_count_get(&param_list);
 
-	/* Check if the response is valid from the parser output. */
-	if (valid_params == 0) {
-		return -EIO;
-	}
+		/* Check if the response is valid from the parser output. */
+		if (valid_params == 0) {
+			return -EIO;
+		}
 
-	model_ptr = at_cmd_decoders[model_index].at_cmd_decoder(&param_list,
+		err = at_params_string_get(&param_list, 0, id, 16);
+		int model_index = get_at_cmd_decode_handler_index(id);
+
+		if (model_index < 0) {
+			return -EIO;
+		}
+
+		model_ptr = at_cmd_decoders[model_index].at_cmd_decoder(&param_list,
 								valid_params);
 
-	if (at_cmd_decoder_handler && model_ptr) {
-		at_cmd_decoder_handler(at_cmd_decoders[model_index].model,
-				       model_ptr);
-	}
+		if (at_cmd_decoder_handler && model_ptr) {
+			at_cmd_decoder_handler(at_cmd_decoders[model_index].model,
+				       	model_ptr);
+		}
 
-	k_free(model_ptr);
+		k_free(model_ptr);
+	} while(parse_err == EAGAIN);
 
 	return 0;
 }

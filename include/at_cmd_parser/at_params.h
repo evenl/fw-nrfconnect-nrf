@@ -30,8 +30,8 @@ extern "C" {
 #endif
 
 /** Parameter types. */
-enum at_param_type {
-	/** Empty parameter. Must be value '0'. */
+enum at_param_type {|
+	/** Invalid parameter, typically a parameter that doesn't exist */
 	AT_PARAM_TYPE_EMPTY,
 	/** Parameter of type short. **/
 	AT_PARAM_TYPE_NUM_SHORT,
@@ -39,12 +39,12 @@ enum at_param_type {
 	AT_PARAM_TYPE_NUM_INT,
 	/** Parameter of type string. **/
 	AT_PARAM_TYPE_STRING
+	/** Emtpy or optional parameter that should be skipped. **/
+	AT_PARAM_TYPE_EMPTY,
 };
 
 /** Parameter value. */
 union at_param_value {
-	/** Short value. */
-	u16_t short_val;
 	/** Integer value. **/
 	u32_t int_val;
 	/** String value. **/

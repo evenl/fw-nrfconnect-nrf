@@ -86,7 +86,7 @@ int at_cmd_decoder_set_handler(at_cmd_decoder_handler_t handler);
  *
  * @param at_message A string containing an AT command message.
  */
-int at_cmd_decode(char *at_message);
+int at_cmd_decode(const char *at_message);
 
 /** @} */
 

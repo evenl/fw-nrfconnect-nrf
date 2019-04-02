@@ -142,7 +142,7 @@ int at_params_put_short(const struct at_param_list *list, size_t index,
 	at_param_clear(param);
 
 	param->type = AT_PARAM_TYPE_NUM_SHORT;
-	param->value.short_val = (value & USHRT_MAX);
+	param->value.int_val = (u32_t)(value & USHRT_MAX);
 	return 0;
 }
 
@@ -229,7 +229,7 @@ int at_params_get_short(const struct at_param_list *list, size_t index,
 		return -EINVAL;
 	}
 
-	*value = param->value.short_val;
+	*value = (u16_t)param->value.int_val;
 	return 0;
 }
 
