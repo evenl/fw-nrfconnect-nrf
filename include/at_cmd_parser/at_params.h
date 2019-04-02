@@ -32,13 +32,13 @@ extern "C" {
 /** Parameter types. */
 enum at_param_type {|
 	/** Invalid parameter, typically a parameter that doesn't exist */
-	AT_PARAM_TYPE_EMPTY,
+	AT_PARAM_TYPE_INVALID,
 	/** Parameter of type short. **/
 	AT_PARAM_TYPE_NUM_SHORT,
 	/** Parameter of type integer. **/
 	AT_PARAM_TYPE_NUM_INT,
 	/** Parameter of type string. **/
-	AT_PARAM_TYPE_STRING
+	AT_PARAM_TYPE_STRING,
 	/** Emtpy or optional parameter that should be skipped. **/
 	AT_PARAM_TYPE_EMPTY,
 };
@@ -164,6 +164,21 @@ int at_params_string_put(const struct at_param_list *list, size_t index,
 			 const char *str, size_t str_len);
 
 /**
+ * @brief Add a parameter in the list at the specified index and assign it a
+ * empty status.
+ *
+ * This will indicate that an empty parameter was found when parsing the
+ * AT string
+ *
+ * @param[in] list    Parameter list.
+ * @param[in] index   Index in the list where to put the parameter.
+ *
+ * @retval 0 If the operation was successful.
+ *           Otherwise, a (negative) error code is returned.
+ */
+int at_params_empty_put(const struct at_param_list *list, size_t index);
+
+/**
  * @brief Get the size of a given parameter (in bytes).
  *
  * A missing parameter has a size of '0'.
@@ -237,6 +252,18 @@ int at_params_string_get(const struct at_param_list *list, size_t index,
  * @return The number of valid parameters until an empty parameter is found.
  */
 u32_t at_params_valid_count_get(const struct at_param_list *list);
+
+/**
+ * @brief Get parameter type for parameter at index
+ *
+ * @param[in] list    Parameter list.
+ * @param[in] index   Parameter index in the lis.
+ *
+ * @return Return parameter type of @ref at_param_type.
+ */
+enum at_param_type at_params_get_type(const struct at_param_list *list,
+				      size_t index);
+
 
 /** @} */
 
