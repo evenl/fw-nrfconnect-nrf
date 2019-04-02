@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
  */
 
-#ifndef AT_PARAMS_H_
-#define AT_PARAMS_H_
-
-/**@file at_params.h
+/**
+ * @file at_params.h
  *
  * @brief Store a list of AT command/response parameters.
  * @defgroup at_params AT command/response parameters
@@ -21,14 +19,19 @@
  * cannot be changed. All parameters values are copied in the list.
  * Parameters should be cleared to free that memory. Getter and setter
  * methods are available to read parameter values.
- *
  */
+#ifndef AT_PARAMS_H__
+#define AT_PARAMS_H__
 
 #include <zephyr/types.h>
 
-/** Parameter type. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** Parameter types. */
 enum at_param_type {
-	/** Empty parameter. */
+	/** Empty parameter. Must be value '0'. */
 	AT_PARAM_TYPE_EMPTY,
 	/** Parameter of type short. **/
 	AT_PARAM_TYPE_NUM_SHORT,
@@ -79,9 +82,7 @@ struct at_param_list {
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int at_params_list_init(struct at_param_list *list,
-			     size_t max_params_count);
-
+int at_params_list_init(struct at_param_list *list, size_t max_params_count);
 
 /**
  * @brief Clear/reset all parameter types and values.
@@ -92,7 +93,6 @@ int at_params_list_init(struct at_param_list *list,
  */
 void at_params_list_clear(struct at_param_list *list);
 
-
 /**
  * @brief Free a list of parameters.
  *
@@ -101,7 +101,6 @@ void at_params_list_clear(struct at_param_list *list);
  * @param[in] list Parameter list to free.
  */
 void at_params_list_free(struct at_param_list *list);
-
 
 /**
  * @brief Clear/reset a parameter type and value.
@@ -113,7 +112,6 @@ void at_params_list_free(struct at_param_list *list);
  *           Otherwise, a (negative) error code is returned.
  */
 int at_params_clear(struct at_param_list *list, size_t index);
-
 
 /**
  * @brief Add a parameter in the list at the specified index and assign it a
@@ -131,7 +129,6 @@ int at_params_clear(struct at_param_list *list, size_t index);
 int at_params_short_put(const struct at_param_list *list, size_t index,
 			u16_t value);
 
-
 /**
  * @brief Add a parameter in the list at the specified index and assign it an
  * integer value.
@@ -146,8 +143,7 @@ int at_params_short_put(const struct at_param_list *list, size_t index,
  *           Otherwise, a (negative) error code is returned.
  */
 int at_params_int_put(const struct at_param_list *list, size_t index,
-			u32_t value);
-
+		      u32_t value);
 
 /**
  * @brief Add a parameter in the list at the specified index and assign it a
@@ -164,10 +160,8 @@ int at_params_int_put(const struct at_param_list *list, size_t index,
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int at_params_string_put(const struct at_param_list *list,
-			size_t index, const char *str,
-			size_t str_len);
-
+int at_params_string_put(const struct at_param_list *list, size_t index,
+			 const char *str, size_t str_len);
 
 /**
  * @brief Get the size of a given parameter (in bytes).
@@ -182,8 +176,7 @@ int at_params_string_put(const struct at_param_list *list,
  *           Otherwise, a (negative) error code is returned.
  */
 int at_params_size_get(const struct at_param_list *list, size_t index,
-			size_t *len);
-
+		       size_t *len);
 
 /**
  * @brief Get a parameter value as a short number.
@@ -201,7 +194,6 @@ int at_params_size_get(const struct at_param_list *list, size_t index,
 int at_params_short_get(const struct at_param_list *list, size_t index,
 			u16_t *value);
 
-
 /**
  * @brief Get a parameter value as an integer number.
  *
@@ -216,8 +208,7 @@ int at_params_short_get(const struct at_param_list *list, size_t index,
  *           Otherwise, a (negative) error code is returned.
  */
 int at_params_int_get(const struct at_param_list *list, size_t index,
-			u32_t *value);
-
+		      u32_t *value);
 
 /**
  * @brief Get a parameter value as a string.
@@ -235,9 +226,8 @@ int at_params_int_get(const struct at_param_list *list, size_t index,
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int at_params_string_get(const struct at_param_list *list,
-			size_t index, char *value, size_t len);
-
+int at_params_string_get(const struct at_param_list *list, size_t index,
+			 char *value, size_t len);
 
 /**
  * @brief Get the number of valid parameters in the list.
@@ -250,4 +240,8 @@ u32_t at_params_valid_count_get(const struct at_param_list *list);
 
 /** @} */
 
-#endif /* AT_PARAMS_H_ */
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* AT_PARAMS_H__ */

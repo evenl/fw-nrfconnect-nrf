@@ -12,16 +12,17 @@
 #include <zephyr.h>
 #include <zephyr/types.h>
 
-#include <at_cmd_parser.h>
-#include <at_utils.h>
+#include <at_cmd_parser/at_cmd_parser.h>
+#include <at_cmd_parser/at_utils.h>
 
 #define AT_CMD_PARAM_SEPARATOR ','
 #define AT_CMD_SEPARATOR ';'
 
-/* Internal function. Parameters cannot be null. String must be null terminated.
+/*
+ * Internal function.
+ * Parameters cannot be null. String must be null terminated.
  */
-static int at_parse_param_u32(char *at_str, u32_t *val,
-				size_t *consumed)
+static int at_parse_param_u32(char *at_str, u32_t *val, size_t *consumed)
 {
 	u32_t value = 0;
 	u32_t check_value;
@@ -37,7 +38,12 @@ static int at_parse_param_u32(char *at_str, u32_t *val,
 		return -EINVAL;
 	}
 
-	while (isdigit(*at_str)) {
+	while ((*at_str != ' ') && (*at_str != AT_CMD_PARAM_SEPARATOR) &&
+	       (*at_str != '\r') && (*at_str != '\n')) {
+		if (!isdigit(*at_str)) {
+			return -EINVAL;
+		}
+
 		if (value > UINT32_MAX - 1) {
 			return -EINVAL;
 		}
@@ -59,14 +65,14 @@ static int at_parse_param_u32(char *at_str, u32_t *val,
 	return 0;
 }
 
-
-/* Internal function. Parameters cannot be null. String must be null terminated.
+/*
+ * Internal function.
+ * Parameters cannot be null. String must be null terminated.
  */
-static int at_parse_param_numeric(char *at_str,
-				  struct at_param_list *list,
+static int at_parse_param_numeric(char *at_str, struct at_param_list *list,
 				  size_t index, size_t *consumed)
 {
-	size_t num_spaces = at_params_space_count_get(&at_str);
+	size_t num_spaces = at_params_get_space_count(&at_str);
 
 	u32_t val;
 	size_t consumed_bytes;
@@ -78,20 +84,20 @@ static int at_parse_param_numeric(char *at_str,
 	}
 
 	if (val <= USHRT_MAX) {
-		err = at_params_short_put(list, index, (u16_t)(val));
+		err = at_params_put_short(list, index, (u16_t)(val));
 	} else {
-		err = at_params_int_put(list, index, val);
+		err = at_params_put_int(list, index, val);
 	}
 
 	*consumed = consumed_bytes + num_spaces;
 	return 0;
 }
 
-
-/* Internal function. Parameters cannot be null. String must be null terminated.
+/*
+ * Internal function.
+ * Parameters cannot be null. String must be null terminated.
  */
-static int at_parse_param_string(char *at_str,
-				 struct at_param_list *list,
+static int at_parse_param_string(char *at_str, struct at_param_list *list,
 				 size_t index, size_t *consumed)
 {
 	u16_t str_len;
@@ -102,7 +108,7 @@ static int at_parse_param_string(char *at_str,
 		return 0;
 	}
 
-	size_t spaces = at_params_space_count_get(&at_str);
+	size_t spaces = at_params_get_space_count(&at_str);
 
 	if (*at_str == '\"') {
 		at_str++;
@@ -111,11 +117,10 @@ static int at_parse_param_string(char *at_str,
 
 	param_value_start = at_str;
 
-	while ((*at_str != '\0') && (*at_str != '\r')
-		&& ((!in_double_quotes
-		&& ((*at_str != AT_CMD_SEPARATOR)
-		|| (*at_str != AT_CMD_PARAM_SEPARATOR)))
-		|| (in_double_quotes && (*at_str != '\"')))) {
+	while ((*at_str != '\0') &&
+	       ((!in_double_quotes && ((*at_str != AT_CMD_SEPARATOR) ||
+				       (*at_str != AT_CMD_PARAM_SEPARATOR))) ||
+		(in_double_quotes && (*at_str != '\"')))) {
 		at_str++;
 	}
 
@@ -132,15 +137,15 @@ static int at_parse_param_string(char *at_str,
 		*consumed += 2;
 	}
 
-	return at_params_string_put(list, index, param_value_start, str_len);
+	return at_params_put_string(list, index, param_value_start, str_len);
 }
 
-
-/* Internal function. Parameters cannot be null. String must be null terminated.
+/*
+ * Internal function.
+ * Parameters cannot be null. String must be null terminated.
  */
-static int at_parse_param(char *at_params_str,
-			  struct at_param_list *list, size_t index,
-			  size_t *consumed)
+static int at_parse_param(char *at_params_str, struct at_param_list *list,
+			  size_t index, size_t *consumed)
 {
 	if (at_params_str == NULL || *at_params_str == '\0' ||
 	    *at_params_str == AT_CMD_PARAM_SEPARATOR ||
@@ -150,8 +155,7 @@ static int at_parse_param(char *at_params_str,
 		return 0;
 	}
 
-	int err = at_parse_param_numeric(at_params_str, list, index,
-					 consumed);
+	int err = at_parse_param_numeric(at_params_str, list, index, consumed);
 
 	if (err) {
 		err = at_parse_param_string(at_params_str, list, index,
@@ -161,19 +165,17 @@ static int at_parse_param(char *at_params_str,
 	return err;
 }
 
-
-int at_parser_params_from_str(char *at_params_str,
-			      struct at_param_list *list)
+int at_parser_params_from_str(char *at_params_str, struct at_param_list *list)
 {
 	return at_parser_max_params_from_str(at_params_str, list,
 					     list->param_count);
 }
 
-
-int at_parser_max_params_from_str(char *str,
-				  struct at_param_list *list,
+int at_parser_max_params_from_str(char *str, struct at_param_list *list,
 				  size_t max_params_count)
 {
+	size_t i = 0;
+
 	if (str == NULL || list == NULL || list->params == NULL) {
 		return -EINVAL;
 	}
@@ -182,9 +184,9 @@ int at_parser_max_params_from_str(char *str,
 
 	max_params_count = MIN(max_params_count, list->param_count);
 
-	(void)at_params_space_count_get(&str);
+	(void)at_params_get_space_count(&str);
 
-	for (size_t i = 0; i < max_params_count; ++i) {
+	while (i < max_params_count) {
 		size_t consumed;
 		int err = at_parse_param(str, list, i, &consumed);
 
@@ -192,16 +194,25 @@ int at_parser_max_params_from_str(char *str,
 			return err;
 		}
 
-		str += consumed;
+		if (consumed > 0) {
+			i++;
+			str += consumed;
+		}
 
 		if (i < (max_params_count - 1) && *str != '\0') {
 			if (*str == AT_CMD_PARAM_SEPARATOR) {
 				str++;
-			} else if ((*str == '\r') || (*str == '\n')) {
-				return 0;
+			} else if ((*str == '\n') || (*str == '\r')) {
+				while ((*str == '\n') || (*str == '\r')) {
+					str++;
+				}
 			} else {
 				return -EINVAL;
 			}
+		}
+
+		if (*str == '\0') {
+			return 0;
 		}
 	}
 

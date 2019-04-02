@@ -4,19 +4,25 @@
  * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
  */
 
-#ifndef AT_CMD_PARSER_H_
-#define AT_CMD_PARSER_H_
-
-/**@file at_cmd_parser.h
+/**
+ * @file at_cmd_parser.h
  *
- * @brief Basic parser for AT commands.
  * @defgroup at_cmd_parser AT command parser
+ * @ingroup at_cmd_parser
  * @{
+ * @brief Basic parser for AT commands.
  */
+#ifndef AT_CMD_PARSER_H__
+#define AT_CMD_PARSER_H__
 
 #include <stdlib.h>
 #include <zephyr/types.h>
-#include <at_params.h>
+
+#include "at_params.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  * @brief Parse a maximum number of AT command or response parameters from a string.
@@ -44,9 +50,8 @@
  *           Otherwise, a (negative) error code is returned.
  */
 int at_parser_max_params_from_str(char *at_params_str,
-				struct at_param_list *list,
-				size_t max_params_count);
-
+				  struct at_param_list *list,
+				  size_t max_params_count);
 
 /**
  * @brief Parse AT command or response parameters from a string.
@@ -69,9 +74,12 @@ int at_parser_max_params_from_str(char *at_params_str,
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int at_parser_params_from_str(char *at_params_str,
-				struct at_param_list *list);
+int at_parser_params_from_str(char *at_params_str, struct at_param_list *list);
 
 /** @} */
 
-#endif /* AT_CMD_PARSER_H_ */
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* AT_CMD_PARSER_H__ */
