@@ -305,7 +305,7 @@ void bsd_os_errno_set(int err_code)
 		errno = EKEYREJECTED;
 		break;
 	default:
-		errno = EINVAL;
+		errno = err_code;
 		break;
 	}
 }

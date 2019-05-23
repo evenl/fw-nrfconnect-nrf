@@ -25,9 +25,8 @@ static int _bsdlib_init(struct device *unused)
 	 */
 	IRQ_DIRECT_CONNECT(BSD_NETWORK_IRQ, BSD_NETWORK_IRQ_PRIORITY,
 			   ipc_proxy_irq_handler, 0);
-	bsd_init();
 
-	return 0;
+	return bsd_init();
 }
 
 int bsdlib_init(void)
