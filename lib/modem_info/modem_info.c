@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
  */
 
-#include <at_cmd_parser.h>
+#include <at_cmd_parser/at_cmd_parser.h>
 #include <device.h>
 #include <errno.h>
 #include <modem_info.h>
@@ -37,41 +37,40 @@ LOG_MODULE_REGISTER(modem_info);
 #define AT_CMD_CRSM		"AT+CRSM"
 #define AT_CMD_ICCID		"AT+CRSM=176,12258,0,0,10"
 #define AT_CMD_SUCCESS_SIZE	5
-#define RSRP_PARAM_INDEX 0
-#define RSRP_PARAM_COUNT 2
+
+#define RSRP_PARAM_INDEX 1
+#define RSRP_PARAM_COUNT 3
 #define RSRP_OFFSET_VAL 141
 
-#define BAND_PARAM_INDEX 0 /* Index of desired parameter in returned string */
-#define BAND_PARAM_COUNT 1 /* Number of parameters returned from modem */
+#define BAND_PARAM_INDEX 1 /* Index of desired parameter in returned string */
+#define BAND_PARAM_COUNT 2 /* Number of parameters returned from modem */
 
-#define MODE_PARAM_INDEX 0
-#define MODE_PARAM_COUNT 1
+#define MODE_PARAM_INDEX 1
+#define MODE_PARAM_COUNT 2
 
-#define OPERATOR_PARAM_INDEX 2
-#define OPERATOR_PARAM_COUNT 4
+#define OPERATOR_PARAM_INDEX 3
+#define OPERATOR_PARAM_COUNT 5
 
-#define CELLID_PARAM_INDEX 3
-#define CELLID_PARAM_COUNT 5
+#define CELLID_PARAM_INDEX 4
+#define CELLID_PARAM_COUNT 6
 
-#define IP_ADDRESS_PARAM_INDEX 3
-#define IP_ADDRESS_PARAM_COUNT 6
+#define IP_ADDRESS_PARAM_INDEX 4
+#define IP_ADDRESS_PARAM_COUNT 7
 
-#define UICC_PARAM_INDEX 0
-#define UICC_PARAM_COUNT 1
+#define UICC_PARAM_INDEX 1
+#define UICC_PARAM_COUNT 2
 
-#define VBAT_PARAM_INDEX 0
-#define VBAT_PARAM_COUNT 1
+#define VBAT_PARAM_INDEX 1
+#define VBAT_PARAM_COUNT 2
 
-#define TEMP_PARAM_INDEX 1
-#define TEMP_PARAM_COUNT 2
+#define TEMP_PARAM_INDEX 2
+#define TEMP_PARAM_COUNT 3
 
 #define FW_PARAM_INDEX 0
 #define FW_PARAM_COUNT 1
 
-#define ICCID_PARAM_INDEX 2
-#define ICCID_PARAM_COUNT 3
-
-#define CMD_SIZE(x) (strlen(x) - 1)
+#define ICCID_PARAM_INDEX 3
+#define ICCID_PARAM_COUNT 4
 
 static const char success[] = "OK";
 
@@ -247,35 +246,13 @@ static void flip_iccid_string(char *buf)
 	}
 }
 
-static int modem_info_parse_iccid(const struct modem_info_data *modem_data,
-				  char *buf)
-{
-	int err;
-	u32_t param_index;
-
-	err = at_parser_max_params_from_str(
-		&buf[CMD_SIZE(AT_CMD_CRSM)], &m_param_list,
-		modem_data->param_count);
-
-	if (err != 0) {
-		return err;
-	}
-
-	param_index = at_params_valid_count_get(&m_param_list);
-	if (param_index != modem_data->param_count) {
-		return -EAGAIN;
-	}
-
-	return err;
-}
-
 static int modem_info_parse(const struct modem_info_data *modem_data, char *buf)
 {
 	int err;
 	u32_t param_index;
 
 	err = at_parser_max_params_from_str(
-		&buf[CMD_SIZE(modem_data->cmd)], &m_param_list,
+		buf, &m_param_list,
 		modem_data->param_count);
 
 	if (err != 0) {
@@ -377,11 +354,7 @@ int modem_info_string_get(enum modem_info info, char *buf)
 		return err;
 	}
 
-	if (info == MODEM_INFO_ICCID) {
-		err = modem_info_parse_iccid(modem_data[info], recv_buf);
-	} else {
-		err = modem_info_parse(modem_data[info], recv_buf);
-	}
+	err = modem_info_parse(modem_data[info], recv_buf);
 
 	if (err) {
 		return err;

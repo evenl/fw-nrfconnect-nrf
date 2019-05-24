@@ -10,6 +10,6 @@ zephyr_library_sources(
 	at_utils.c
 	at_params.c
 	at_cmd_decoder.c
-
 )
+
 zephyr_include_directories(include)
