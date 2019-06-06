@@ -6,100 +6,227 @@
 
 #include <zephyr.h>
 
-#include <at_cmd_interface.h>
-#include <at_cmd_parser/at_cmd_decoder.h>
+#include <at_cmd_parser/at_cmd_parser.h>
+#include <at_cmd_parser/at_params.h>
 
-/* This callback will be called when ever a message from the modem is completely
- * parsed. The model parameter will contain an identifier for the content
- * of the message, and the model_ptr parameter will contain a pointer to a
- * model of the data.
- */
-void process_model(enum at_cmd_models model, void *model_ptr)
+char *str1 = "+CEREG: 2,\"76C1\",\"0102DA04\",65537";
+char *str2 = "+CEREG: -2, \"76C1\", \"0102DA04\", 65537";
+char *str3 = "CEREG: 2, \"76C1\", \"0102DA04\", 7";
+char *str4 = "+CEREG: 2, \"76C1, \"0102DA04\", 7";
+char *str5 = "+CEREG: 2, \"76C1, \"0102DA04, 7";
+char *str6 = "+CMT: \"+4797664513\", 24\r\n"
+	     "06917429000171040A91747966543100009160402143708006C8329BFD0601";
+char *str7 = "mfw_nrf9160_0.7.0-23.prealpha";
+char *str8 = "+CPSMS: 1,,,\"10101111\",\"01101100\"";
+char *str9 = "+CGEQOSRDP: 0,0,,\r\n"
+	     "+CGEQOSRDP: 1,2,,\r\n"
+	     "+CGEQOSRDP: 2,4,,,1,65280000\r\n";
+char *str10 = "%CMNG: 12345678, 0, \"978C...02C4\","
+	      "\"-----BEGIN CERTIFICATE-----"
+	      "MIIBc464..."
+	      "...bW9aAa4"
+	      "-----END CERTIFICATE-----\"";
+
+static struct at_param_list param_list;
+
+void print_cereg()
 {
-	static u32_t count;
+	char   buf[32];
+	u16_t  short_val;
+	u32_t  int_val;
+	size_t len;
 
-	printk("------Message %04d-------\n", count++);
+	len = at_params_string_get(&param_list, 0, buf, 32);
+	buf[len] = '\0';
+	printk("Notification ID: %s\n", buf);
 
-	switch (model) {
-	case AT_CMD_CEREG_MODEL:
-		printk("CEREG Stat: %d\n",
-			((struct at_cmd_model_cereg *)model_ptr)->stat);
-		printk("CEREG TAC:  %s\n",
-			((struct at_cmd_model_cereg *)model_ptr)->tac);
-		printk("CEREG CI:   %s\n",
-			((struct at_cmd_model_cereg *)model_ptr)->ci);
-		printk("CEREG Act:  %d\n",
-			((struct at_cmd_model_cereg *)model_ptr)->act);
-		break;
-	case AT_CMD_CESQ_MODEL:
-		printk("CESQ Rxlev: %d\n",
-			((struct at_cmd_model_cesq *)model_ptr)->rxlev);
-		printk("CESQ ber:   %d\n",
-			((struct at_cmd_model_cesq *)model_ptr)->ber);
-		printk("CESQ rscp:  %d\n",
-			((struct at_cmd_model_cesq *)model_ptr)->rscp);
-		printk("CESQ ecno:  %d\n",
-			((struct at_cmd_model_cesq *)model_ptr)->ecno);
-		printk("CESQ rsrq:  %d\n",
-			((struct at_cmd_model_cesq *)model_ptr)->rsrq);
-		printk("CESQ rsrp:  %d\n",
-			((struct at_cmd_model_cesq *)model_ptr)->rsrp);
-		break;
-	case AT_NOT_CESQ_MODEL:
-		printk("Notification CESQ rsrp: %d\n",
-			((struct at_not_model_cesq *)model_ptr)->rsrp);
-		printk("Notification CESQ threshold index: %d\n",
-			((struct at_not_model_cesq *)
-				model_ptr)->threshold_index);
-		break;
-	default:
-		break;
-	}
+	at_params_short_get(&param_list, 1, &short_val);
+	printk("Stat: %u\n", short_val);
 
-	printk("-------------------------\n");
+	len = at_params_string_get(&param_list, 2, buf, 32);
+	buf[len] = '\0';
+	printk("TAC: %s\n", buf);
+
+	len = at_params_string_get(&param_list, 3, buf, 32);
+	buf[len] = '\0';
+	printk("CI: %s\n", buf);
+
+	at_params_int_get(&param_list, 4, &int_val);
+	printk("ACT: %u\n", int_val);
 }
 
-void received_data_handler(char *response, size_t response_len)
+void print_cmt()
 {
-	if (at_cmd_decode(response) != 0) {
-		printk("Could not decode AT command response %s\n", response);
-	}
+	char   buf[64];
+	u16_t  short_val;
+	u32_t  int_val;
+	size_t len;
+
+	len = at_params_string_get(&param_list, 0, buf, 64);
+	buf[len] = '\0';
+	printk("Notification ID: %s\n", buf);
+
+	len = at_params_string_get(&param_list, 1, buf, 64);
+	buf[len] = '\0';
+	printk("Number: %s\n", buf);
+
+	at_params_short_get(&param_list, 2, &short_val);
+	printk("PDU length: %u\n", short_val);
+
+	len = at_params_string_get(&param_list, 3, buf, 64);
+	buf[len] = '\0';
+	printk("PDU payload: %s\n", buf);
 }
 
-/* This sample will enable unsolicited (AT+CEREG=2),
- * then enable signal strength notifications (AT%CESQ=1),
- * then finally poll for extended signal strengt information
- * every 5 seconds.
- */
-void main(void)
+void print_cgmr()
+{
+	char   buf[64];
+	size_t len;
+
+	len = at_params_string_get(&param_list, 0, buf, 64);
+	buf[len] = '\0';
+	printk("Firmware: %s\n", buf);
+}
+
+void print_cpsms()
 {
 	char buf[32];
+	size_t len;
+	u16_t  val;
+
+	len = at_params_string_get(&param_list, 0, buf, 32);
+	buf[len] = '\0';
+	printk("Notification ID: %s\n", buf);
+
+	at_params_short_get(&param_list, 1, &val);
+	printk("Mode: %u\n", val);
+
+	len = at_params_string_get(&param_list, 4, buf, 32);
+	buf[len] = '\0';
+	printk("Req periodic TAU: %s\n", buf);
+
+	len = at_params_string_get(&param_list, 5, buf, 32);
+	buf[len] = '\0';
+	printk("Req Active time: %s\n", buf);
+}
+
+void print_qos(int param_count)
+{
+	char buf[32];
+	size_t len;
+	u16_t  val1;
+	u32_t  val2;
+
+	len = at_params_string_get(&param_list, 0, buf, 32);
+	buf[len] = '\0';
+	printk("Notification ID: %s\n", buf);
+
+	at_params_short_get(&param_list, 1, &val1);
+	printk("Param 1: %u\n", val1);
+
+	at_params_short_get(&param_list, 2, &val1);
+	printk("Param 2: %u\n", val1);
+
+	if (at_params_get_type(&param_list, 3) == AT_PARAM_TYPE_EMPTY) {
+		printk("Param 3 is empty\n");
+	} else {
+		len = at_params_string_get(&param_list, 3, buf, 32);
+		buf[len] = '\0';
+		printk("Param 3: %s (length: %d)\n", buf, len);
+	}
+	if (at_params_get_type(&param_list, 4) == AT_PARAM_TYPE_EMPTY) {
+		printk("Param 4 is empty\n");
+	} else {
+		len = at_params_string_get(&param_list, 4, buf, 32);
+		buf[len] = '\0';
+		printk("Param 4: %s (length: %d)\n", buf, len);
+	}
+
+	if (param_count == 7) {
+		at_params_short_get(&param_list, 5, &val1);
+		printk("Param 5: %u\n", val1);
+
+		at_params_int_get(&param_list, 6, &val2);
+		printk("Param 6: %u\n", val2);		
+	}
+}
+
+void print_cmng()
+{
+	char buf[128];
+	size_t len;
+	u32_t  val;
+
+	len = at_params_string_get(&param_list, 0, buf, 32);
+	buf[len] = '\0';
+	printk("Notification ID: %s\n", buf);
+
+	at_params_int_get(&param_list, 1, &val);
+	printk("Param 1: %u\n", val);
+
+	at_params_int_get(&param_list, 2, &val);
+	printk("Param 2: %u\n", val);
+
+	len = at_params_string_get(&param_list, 3, buf, 32);
+	buf[len] = '\0';
+	printk("Param 3: %s (length: %d)\n", buf, len);
+
+	len = at_params_string_get(&param_list, 4, buf, 128);
+	buf[len] = '\0';
+	printk("Param 4: %s (length: %d)\n", buf, len);
+}
+
+void main(void)
+{
+	int     param_count;
+	int     err;
 
 	printk("The AT command parser sample started\n");
 
-	at_cmd_set_handler(received_data_handler);
-	at_cmd_decoder_init(NULL);
-	at_cmd_decoder_set_handler(process_model);
+	at_params_list_init(&param_list, 10);
 
-	if (at_cmd_write("AT+CEREG=2") != AT_CMD_OK) {
-		printk("Failed to send AT+CEREG=2 command\n");
-	} else {
-		printk("AT+CEREG=2 command returned OK\n");
-	}
+	err = at_parser_params_from_str(&str1, &param_list);
+	printk("Str1 valid params: %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_cereg();
 
-	if (at_cmd_write("AT%CESQ=1") != AT_CMD_OK) {
-		printk("Failed to send AT%%CESQ=1 command\n");
-	} else {
-		printk("AT%CESQ=1 command returned OK\n");
-	}
+	err = at_parser_params_from_str(&str2, &param_list);
+	printk("Str2 valid params: %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_cereg();
 
-	while (1) {
-		if (at_cmd_write_with_response("AT+CESQ", buf, 32)
-						!= AT_CMD_OK) {
-			printk("Failed to send AT+CESQ command");
-		} else {
-			printk("AT+CESQ command response: %s\n", buf);
-		}
-		k_sleep(K_MSEC(5000));
-	}
+	err = at_parser_params_from_str(&str3, &param_list);
+	printk("Str3 valid params: %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_cereg();
+
+	err = at_parser_params_from_str(&str4, &param_list);
+	printk("Str4 valid params: %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_cereg();
+
+	err = at_parser_params_from_str(&str5, &param_list);
+	printk("Str5 valid params: %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_cereg();
+
+	err = at_parser_params_from_str(&str6, &param_list);
+	printk("Str6 valid params: %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_cmt();
+
+	err = at_parser_params_from_str(&str7, &param_list);
+	printk("Str7 valid params: %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_cgmr();
+
+	err = at_parser_params_from_str(&str8, &param_list);
+	printk("Str8 valid params: %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_cpsms();
+
+	do {
+		err         = at_parser_params_from_str(&str9, &param_list);
+		param_count = at_params_valid_count_get(&param_list);
+
+		printk("Remainding str9: %s\n", str9);
+		printk("Str9 valid params: %d (err: %d)\n", param_count, err);
+		print_qos(param_count);
+	} while (err == EAGAIN);
+
+	err = at_parser_params_from_str(&str10, &param_list);
+	printk("Str10 valid params %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_cmng();
 }
