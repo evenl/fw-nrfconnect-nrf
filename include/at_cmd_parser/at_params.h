@@ -30,7 +30,7 @@ extern "C" {
 #endif
 
 /** Parameter types. */
-enum at_param_type {|
+enum at_param_type {
 	/** Invalid parameter, typically a parameter that doesn't exist */
 	AT_PARAM_TYPE_INVALID,
 	/** Parameter of type short. **/
@@ -39,7 +39,9 @@ enum at_param_type {|
 	AT_PARAM_TYPE_NUM_INT,
 	/** Parameter of type string. **/
 	AT_PARAM_TYPE_STRING,
-	/** Emtpy or optional parameter that should be skipped. **/
+	/** Parameter of type array **/
+	AT_PARAM_TYPE_ARRAY,
+	/** Empty or optional parameter that should be skipped. **/
 	AT_PARAM_TYPE_EMPTY,
 };
 
@@ -49,11 +51,14 @@ union at_param_value {
 	u32_t int_val;
 	/** String value. **/
 	char *str_val;
+	/** Array of u32_t */
+	u32_t *array_val;
 };
 
 /** Parameter consisting of parameter type and value. */
 struct at_param {
-	enum at_param_type type;
+	enum at_param_type   type;
+	size_t               size;
 	union at_param_value value;
 };
 
@@ -165,6 +170,24 @@ int at_params_string_put(const struct at_param_list *list, size_t index,
 
 /**
  * @brief Add a parameter in the list at the specified index and assign it a
+ * array value.
+ *
+ * The parameter array value is copied and added to the list. 
+ * If a parameter exists at this index, it is replaced.
+ *
+ * @param[in] list      Parameter list.
+ * @param[in] index     Index in the list where to put the parameter.
+ * @param[in] array     Pointer to the string value.
+ * @param[in] array_len Number of characters of the string value @p str.
+ *
+ * @retval 0 If the operation was successful.
+ *           Otherwise, a (negative) error code is returned.
+ */
+int at_params_array_put(const struct at_param_list *list, size_t index,
+			const u32_t *array, size_t array_len);
+
+/**
+ * @brief Add a parameter in the list at the specified index and assign it a
  * empty status.
  *
  * This will indicate that an empty parameter was found when parsing the
@@ -243,6 +266,26 @@ int at_params_int_get(const struct at_param_list *list, size_t index,
  */
 int at_params_string_get(const struct at_param_list *list, size_t index,
 			 char *value, size_t len);
+
+/**
+ * @brief Get a parameter value as a array.
+ *
+ * The parameter type must be a array, or an error is returned.
+ * The string parameter value is copied to the buffer.
+ * @p len must be equal or bigger than the array length,
+ * or an error is returned. The copied string is not null-terminated.
+ *
+ * @param[in] list    Parameter list.
+ * @param[in] index   Parameter index in the list.
+ * @param[in] value   Pointer to the buffer where to copy the value.
+ * @param[in] len     Available space in @p value.
+ *
+ * @retval 0 If the operation was successful.
+ *           Otherwise, a (negative) error code is returned.
+ */
+int at_params_array_get(const struct at_param_list *list, size_t index,
+			u32_t *array, size_t len);
+
 
 /**
  * @brief Get the number of valid parameters in the list.

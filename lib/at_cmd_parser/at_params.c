@@ -59,8 +59,9 @@ static size_t at_param_size(const struct at_param *param)
 		return sizeof(u16_t);
 	} else if (param->type == AT_PARAM_TYPE_NUM_INT) {
 		return sizeof(u32_t);
-	} else if (param->type == AT_PARAM_TYPE_STRING) {
-		return strlen(param->value.str_val);
+	} else if ((param->type == AT_PARAM_TYPE_STRING) ||
+		   (param->type == AT_PARAM_TYPE_ARRAY)) {
+		return param->size;
 	}
 
 	return 0;
@@ -206,14 +207,44 @@ int at_params_string_put(const struct at_param_list *list, size_t index,
 	}
 
 	memcpy(param_value, str, str_len);
-	param_value[str_len] = '\0';
 
 	at_param_clear(param);
+	param->size = str_len;
 	param->type = AT_PARAM_TYPE_STRING;
 	param->value.str_val = param_value;
 
 	return 0;
 }
+
+int at_params_array_put(const struct at_param_list *list, size_t index,
+			 const u32_t *array, size_t array_len)
+{
+	if (list == NULL || list->params == NULL || array == NULL) {
+		return -EINVAL;
+	}
+
+	struct at_param *param = at_params_get(list, index);
+
+	if (param == NULL) {
+		return -EINVAL;
+	}
+
+	u32_t *param_value = (u32_t *)k_malloc(array_len);
+
+	if (param_value == NULL) {
+		return -ENOMEM;
+	}
+
+	memcpy(param_value, array, array_len);
+
+	at_param_clear(param);
+	param->size = array_len;
+	param->type = AT_PARAM_TYPE_ARRAY;
+	param->value.array_val = param_value;
+
+	return 0;
+}
+
 
 int at_params_size_get(const struct at_param_list *list, size_t index,
 		       size_t *len)
@@ -299,6 +330,33 @@ int at_params_string_get(const struct at_param_list *list, size_t index,
 	}
 
 	memcpy(value, param->value.str_val, param_len);
+	return param_len;
+}
+
+int at_params_array_get(const struct at_param_list *list, size_t index,
+			 u32_t *array, size_t len)
+{
+	if (list == NULL || list->params == NULL || array == NULL) {
+		return -EINVAL;
+	}
+
+	struct at_param *param = at_params_get(list, index);
+
+	if (param == NULL) {
+		return -EINVAL;
+	}
+
+	if (param->type != AT_PARAM_TYPE_ARRAY) {
+		return -EINVAL;
+	}
+
+	size_t param_len = at_param_size(param);
+
+	if (len < param_len) {
+		return -ENOMEM;
+	}
+
+	memcpy(array, param->value.array_val, param_len);
 	return param_len;
 }
 

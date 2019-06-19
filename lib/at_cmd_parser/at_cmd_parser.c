@@ -25,6 +25,7 @@
 enum at_parser_state {
 	DETECT_TYPE,
 	SEARCH_NEXT_PARAM,
+	ARRAY,
 	STRING,
 	NUMBER,
 	SMS_PDU,
@@ -94,6 +95,24 @@ static inline bool is_dblquote(char chr)
 	return false;
 }
 
+static inline bool is_array_start(char chr)
+{
+	if (chr == '(') {
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool is_array_stop(char chr)
+{
+	if (chr == ')') {
+		return true;
+	}
+
+	return false;
+}
+
 static inline bool is_number(char chr)
 {
 	if (isdigit(chr) ||
@@ -142,9 +161,14 @@ static int at_parse_param(const char ** at_params_str,
 		if (state == DETECT_TYPE) {
 			if ((index == 0) &&
 			    is_notification(*str)) {
+				/* Only first parameter in the string can be
+				   notification ID, (eg +CEREG:) */
 				set_new_state(NOTIFICATION);
 			} else if ((index > 0) &&
 				is_notification(*str)) {
+				/* If notifications is detected later in the
+				   string we should stop parsing and return
+				   EAGAIN */
 				break;
 			} else if (is_number(*str)) {
 				set_new_state(NUMBER);
@@ -152,9 +176,14 @@ static int at_parse_param(const char ** at_params_str,
 			} else if (is_dblquote(*str)) {
 				set_new_state(STRING);
 				str++;
-
+			} else if (is_array_start(*str)) {
+				set_new_state(ARRAY);
+				str++;
 			} else if (is_lfcr(*str) &&
 			          (prev_state == NUMBER)) {
+				/* If \n or \r is detected in the string and the
+				   previous param was a number we assume the
+				   next parameter is PDU data */
 
 				while (is_lfcr(*str)) {
 					str++;
@@ -163,11 +192,19 @@ static int at_parse_param(const char ** at_params_str,
 				set_new_state(SMS_PDU);
 			} else if ((index == 0) &&
 				    !is_notification(*str)) {
+				/* If the string start without an notification
+				   ID, we treat the whole string as one string
+				   parameter */
 				set_new_state(STRING);
 			} else {
 				if (is_separator(*str)) {
+				/* If a separator is detected we have detected
+				   and empty optional parameter */
 					set_new_state(OPTIONAL);
 				} else {
+				/* The rule set is exhausted, and cannot
+				   continue. Break the loop and return an error
+				*/
 					break;
 				}
 			}
@@ -200,6 +237,26 @@ static int at_parse_param(const char ** at_params_str,
 					     index,
 					     start_ptr, str - start_ptr);
 
+			set_new_state(SEARCH_NEXT_PARAM);
+		} else if (state == ARRAY) {
+			size_t i = 0;
+			u32_t  tmparray[16];
+
+			tmparray[i++] = atoi(str++);
+
+			while (!is_array_stop(*str) &&
+			       !is_terminated(*str)) {
+
+				if (is_separator(*str)) {
+					tmparray[i++] = atoi(++str);
+				} else {
+					str++;
+				}
+			}
+
+			at_params_array_put(list, index,
+					    tmparray,
+					    i * sizeof(u32_t));
 			set_new_state(SEARCH_NEXT_PARAM);
 		} else if (state == NUMBER) {
 			int value = atoi(str);
