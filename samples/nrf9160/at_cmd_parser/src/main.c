@@ -9,23 +9,28 @@
 #include <at_cmd_parser/at_cmd_parser.h>
 #include <at_cmd_parser/at_params.h>
 
-char *str1 = "+CEREG: 2,\"76C1\",\"0102DA04\",65537";
-char *str2 = "+CEREG: -2, \"76C1\", \"0102DA04\", 65537";
-char *str3 = "CEREG: 2, \"76C1\", \"0102DA04\", 7";
-char *str4 = "+CEREG: 2, \"76C1, \"0102DA04\", 7";
-char *str5 = "+CEREG: 2, \"76C1, \"0102DA04, 7";
-char *str6 = "+CMT: \"+4797664513\", 24\r\n"
+const char *str1 = "+CEREG: 2,\"76C1\",\"0102DA04\",65537";
+const char *str2 = "+CEREG: -2, \"76C1\", \"0102DA04\", 65537";
+const char *str3 = "CEREG: 2, \"76C1\", \"0102DA04\", 7";
+const char *str4 = "+CEREG: 2, \"76C1, \"0102DA04\", 7";
+const char *str5 = "+CEREG: 2, \"76C1, \"0102DA04, 7";
+const char *str6 = "+CMT: \"+4797664513\", 24\r\n"
 	     "06917429000171040A91747966543100009160402143708006C8329BFD0601";
-char *str7 = "mfw_nrf9160_0.7.0-23.prealpha";
-char *str8 = "+CPSMS: 1,,,\"10101111\",\"01101100\"";
-char *str9 = "+CGEQOSRDP: 0,0,,\r\n"
+const char *str7 = "mfw_nrf9160_0.7.0-23.prealpha";
+const char *str8 = "+CPSMS: 1,,,\"10101111\",\"01101100\"";
+const char *str9 = "+CGEQOSRDP: 0,0,,\r\n"
 	     "+CGEQOSRDP: 1,2,,\r\n"
 	     "+CGEQOSRDP: 2,4,,,1,65280000\r\n";
-char *str10 = "%CMNG: 12345678, 0, \"978C...02C4\","
+const char *str10 = "%CMNG: 12345678, 0, \"978C...02C4\","
 	      "\"-----BEGIN CERTIFICATE-----"
 	      "MIIBc464..."
 	      "...bW9aAa4"
 	      "-----END CERTIFICATE-----\"";
+
+const char *str11 = "%XCBAND: (1,2,3,4,12,13)";
+const char *str12 = "+CESQ: (99),(99),(255),(255),(255),(0-97,255)";
+
+
 
 static struct at_param_list param_list;
 
@@ -176,6 +181,70 @@ void print_cmng()
 	printk("Param 4: %s (length: %d)\n", buf, len);
 }
 
+void print_xcband()
+{
+	char buf[32];
+	size_t len;
+	u32_t  val[16];
+
+	len = at_params_string_get(&param_list, 0, buf, 31);
+	buf[len] = '\0';
+	printk("Notification ID: %s\n", buf);
+
+	len = at_params_array_get(&param_list, 1, val, sizeof(val));
+
+	for (int i=0;i<(len / sizeof(u32_t));++i) {
+		printk("Value %u: %u\n",i, val[i]);
+	}
+}
+
+void print_cesq()
+{
+	char buf[32];
+	size_t len;
+	u32_t  val[16];
+
+	len = at_params_string_get(&param_list, 0, buf, 31);
+	buf[len] = '\0';
+	printk("Notification ID: %s\n", buf);
+
+	len = at_params_array_get(&param_list, 1, val, sizeof(val));
+
+	for (int i=0;i<(len / sizeof(u32_t));++i) {
+		printk("Value %u: %u\n",i, val[i]);
+	}
+
+	len = at_params_array_get(&param_list, 2, val, sizeof(val));
+
+	for (int i=0;i<(len / sizeof(u32_t));++i) {
+		printk("Value %u: %u\n",i, val[i]);
+	}
+
+	len = at_params_array_get(&param_list, 3, val, sizeof(val));
+
+	for (int i=0;i<(len / sizeof(u32_t));++i) {
+		printk("Value %u: %u\n",i, val[i]);
+	}
+
+	len = at_params_array_get(&param_list, 4, val, sizeof(val));
+
+	for (int i=0;i<(len / sizeof(u32_t));++i) {
+		printk("Value %u: %u\n",i, val[i]);
+	}
+
+	len = at_params_array_get(&param_list, 5, val, sizeof(val));
+
+	for (int i=0;i<(len / sizeof(u32_t));++i) {
+		printk("Value %u: %u\n",i, val[i]);
+	}
+
+	len = at_params_array_get(&param_list, 6, val, sizeof(val));
+
+	for (int i=0;i<(len / sizeof(u32_t));++i) {
+		printk("Value %u: %u\n",i, val[i]);
+	}
+}
+
 void main(void)
 {
 	int     param_count;
@@ -185,7 +254,7 @@ void main(void)
 
 	at_params_list_init(&param_list, 10);
 
-	err = at_parser_params_from_str(&str1, &param_list);
+/*	err = at_parser_params_from_str(&str1, &param_list);
 	printk("Str1 valid params: %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
 	print_cereg();
 
@@ -228,5 +297,13 @@ void main(void)
 
 	err = at_parser_params_from_str(&str10, &param_list);
 	printk("Str10 valid params %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
-	print_cmng();
+	print_cmng();*/
+
+	err = at_parser_params_from_str(&str11, &param_list);
+	printk("Str11 valid params %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_xcband();
+
+	err = at_parser_params_from_str(&str12, &param_list);
+	printk("Str12 valid params %d (err: %d)\n", at_params_valid_count_get(&param_list), err);
+	print_cesq();
 }
