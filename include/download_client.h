@@ -68,6 +68,16 @@ struct download_client_evt {
 };
 
 /**
+ * @brief Download client TLS and PDN configuration options.
+ */
+struct download_client_cfg {
+	/** TLS security tag. If -1, TLS is disabled. */
+	int sec_tag;
+	/** PDN, null-terminated. If NULL, then the default PDN is used. */
+	const char *pdn;
+};
+
+/**
  * @brief Download client asynchronous event handler.
  *
  * Through this callback, the application receives events, such as
@@ -110,8 +120,8 @@ struct download_client {
 	char *host;
 	/** File name, null-terminated. */
 	char *file;
-	/** TLS security tag. */
-	int sec_tag;
+	/** TLS and PDN configuration options. */
+	struct download_client_cfg config;
 
 	/** Internal thread ID. */
 	k_tid_t tid;
@@ -141,13 +151,12 @@ int download_client_init(struct download_client *client,
  *
  * @param[in] client	Client instance.
  * @param[in] host	HTTP server to connect to, null-terminated.
- * @param[in] sec_tag	TLS credentials tag, used for HTTPS connections.
- * 			Must be -1 when using HTTP.
+ * @param[in] config	TLS and PDN configuration options.
  *
  * @retval int Zero on success, a negative error code otherwise.
  */
 int download_client_connect(struct download_client *client, char *host,
-			    int sec_tag);
+			    struct download_client_cfg *config);
 
 /**
  * @brief Download a file.
