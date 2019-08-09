@@ -83,13 +83,16 @@ static int enable_gps(void)
 
 static int init_app(void)
 {
-	u16_t fix_retry     = 0;
-	u16_t fix_interval  = 1;
-	u16_t nmea_mask     = NRF_CONFIG_NMEA_GSV_MASK |
-			      NRF_CONFIG_NMEA_GSA_MASK |
-			      NRF_CONFIG_NMEA_GLL_MASK |
-			      NRF_CONFIG_NMEA_GGA_MASK |
-			      NRF_CONFIG_NMEA_RMC_MASK;
+	nrf_gnss_fix_retry_t       fix_retry    = 0;
+	nrf_gnss_fix_interval_t    fix_interval = 1;
+	nrf_gnss_nmea_mask_t       nmea_mask    = NRF_GNSS_NMEA_GSV_MASK |
+						  NRF_GNSS_NMEA_GSA_MASK |
+						  NRF_GNSS_NMEA_GLL_MASK |
+						  NRF_GNSS_NMEA_GGA_MASK |
+						  NRF_GNSS_NMEA_RMC_MASK;
+	nrf_gnss_delete_mask_t     delete_mask  = 0;
+	nrf_gnss_power_save_mode_t power_mode = NRF_GNSS_PSM_DUTY_CYCLING_POWER;
+
 	int   retval;
 
 	if (enable_gps() != 0) {
@@ -110,7 +113,7 @@ static int init_app(void)
 				NRF_SOL_GNSS,
 				NRF_SO_GNSS_FIX_RETRY,
 				&fix_retry,
-				sizeof(uint16_t));
+				sizeof(nrf_gnss_fix_retry_t));
 
 	if (retval != 0) {
 		printk("Failed to set fix retry value\n");
@@ -121,7 +124,7 @@ static int init_app(void)
 				NRF_SOL_GNSS,
 				NRF_SO_GNSS_FIX_INTERVAL,
 				&fix_interval,
-				sizeof(uint16_t));
+				sizeof(nrf_gnss_fix_interval_t));
 
 	if (retval != 0) {
 		printk("Failed to set fix interval value\n");
@@ -132,7 +135,7 @@ static int init_app(void)
 				NRF_SOL_GNSS,
 				NRF_SO_GNSS_NMEA_MASK,
 				&nmea_mask,
-				sizeof(uint16_t));
+				sizeof(nrf_gnss_nmea_mask_t));
 
 	if (retval != 0) {
 		printk("Failed to set nmea mask\n");
@@ -141,9 +144,20 @@ static int init_app(void)
 
 	retval = nrf_setsockopt(fd,
 				NRF_SOL_GNSS,
+				NRF_SO_GNSS_POWER_SAVE_MODE,
+				&power_mode,
+				sizeof(nrf_gnss_power_save_mode_t));
+
+	if (retval != 0) {
+		printk("Failed to set power save mode\n");
+		return -1;
+	}
+
+	retval = nrf_setsockopt(fd,
+				NRF_SOL_GNSS,
 				NRF_SO_GNSS_START,
-				NULL,
-				0);
+				&delete_mask,
+				sizeof(nrf_gnss_delete_mask_t));
 
 	if (retval != 0) {
 		printk("Failed to start GPS\n");
@@ -167,7 +181,7 @@ static void print_satellite_stats(nrf_gnss_data_frame_t *pvt_data)
 			tracked++;
 
 			if (pvt_data->pvt.sv[i].flags &
-					NRF_GNSS_PVT_FLAG_FIX_VALID_BIT) {
+					NRF_GNSS_SV_FLAG_USED_IN_FIX) {
 				in_fix++;
 			}
 
