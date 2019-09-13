@@ -42,6 +42,8 @@ struct return_state_object {
 
 K_MSGQ_DEFINE(return_code_msq, sizeof(struct return_state_object), 1, 4);
 
+K_MEM_POOL_DEFINE(callback_buf, 64, CONFIG_AT_CMD_RESPONSE_MAX_LEN * 4, 1, 4);
+
 struct callback_work_item {
 	struct k_work    work;
 	char             data[CONFIG_AT_CMD_RESPONSE_MAX_LEN];
@@ -209,7 +211,8 @@ static void socket_thread_fn(void *arg1, void *arg2, void *arg3)
 			}
 
 			struct callback_work_item *item =
-			k_malloc(sizeof(struct callback_work_item));
+			k_mem_pool_malloc(&callback_buf,
+					  sizeof(struct callback_work_item));
 
 			if (!item) {
 				LOG_DBG("Failed to allocate work item");
