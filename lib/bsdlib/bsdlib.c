@@ -33,9 +33,6 @@ static int _bsdlib_init(struct device *unused)
 		.bsd_memory_address = BSD_RESERVED_MEMORY_ADDRESS,
 		.bsd_memory_size = BSD_RESERVED_MEMORY_SIZE
 	};
-		.bsd_memory_address = 0x20010000,
-		.bsd_memory_size = 0xc020
-	};
 
 	init_ret = bsd_init(&init_params);
 	if (IS_ENABLED(CONFIG_BSD_LIBRARY_SYS_INIT)) {
