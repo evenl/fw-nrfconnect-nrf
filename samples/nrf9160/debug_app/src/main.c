@@ -209,6 +209,43 @@ int download_client_callback(const struct download_client_evt *event)
 	return 0;
 }
 
+void app_tcp2_start(struct k_work *item)
+{
+	int  read;
+	static char buf[1024];
+	uint32_t connects=0;
+
+	LOG_INF("Starting TCP client");
+
+	memset(buf, 0, 1024);
+
+	LOG_INF("Connecting");
+	if (connect_socket(AF_INET, &ip_fd, IPPROTO_TCP, SOCK_STREAM) == -ENETUNREACH)
+	{
+		LOG_ERR("Not able to connect, network not avaiable");
+		return;
+	}
+
+	if (ip_fd < 0)
+	{
+		LOG_ERR("Not able to connect to server, errno: %d\n", errno);
+		return;
+	} else {
+		LOG_INF("Connected");
+	}
+
+	LOG_INF("Download started");
+
+	read = recv(ip_fd, buf, 1024, 0);
+	if (read == -1) {
+		LOG_ERR("Error reading, err: %d\n", errno);
+	} else {
+		LOG_INF("Data read: %d\n", read);
+	}
+
+	close(ip_fd);
+}
+
 void app_tcp_start(struct k_work *item)
 {
 	int  read;
@@ -221,7 +258,7 @@ void app_tcp_start(struct k_work *item)
 	memset(buf, 0, 1024);
 
 	atomic_clear(&test_ctrl);
-	atomic_set_bit(&test_ctrl, TEST_CTRL_RUN_BIT);
+//	atomic_set_bit(&test_ctrl, TEST_CTRL_RUN_BIT);
 
 	do {
 		connects++;
@@ -250,7 +287,6 @@ void app_tcp_start(struct k_work *item)
 
 		uint32_t total_bytes  = 0;
 		uint32_t error_count  = 0;
-		uint32_t validate_pos = 0;
 		uint8_t  validate_idx = 0;
 		uint32_t i;
 		uint32_t c=0;
@@ -302,7 +338,7 @@ void app_tcp_start(struct k_work *item)
 			if (config_sleep > 0) {
 				k_sleep(K_MSEC(config_sleep));
 			}
-		} while (run && atomic_test_bit(&test_ctrl, TEST_CTRL_RUN_BIT));
+		} while (run /*&& atomic_test_bit(&test_ctrl, TEST_CTRL_RUN_BIT)*/);
 
 		LOG_INF("Download done");
 		LOG_INF("Total bytes: %d", total_bytes);
@@ -312,7 +348,6 @@ void app_tcp_start(struct k_work *item)
 
 	} while (atomic_test_bit(&test_ctrl, TEST_CTRL_RUN_BIT));
 
-end:
 	close(ip_fd);
 	ip_fd = -1;
 }
@@ -771,6 +806,18 @@ static int cmd_run_tcp_test(const struct shell *shell, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_run_tcp2_test(const struct shell *shell, size_t argc, char **argv)
+{
+	if (argc != 2) {
+		LOG_ERR("Wrong amount of arguments");
+	}
+
+	k_work_init(&run_job, app_tcp2_start);
+	k_work_submit(&run_job);
+
+	return 0;
+}
+
 void cmd_run_http_download_test(const struct shell *shell, size_t argc, char **argv)
 {
 	struct download_client_cfg cfg = {
@@ -863,6 +910,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_run,
 		SHELL_CMD(tcp, NULL, "Run TCP client test", cmd_run_tcp_test),
+		SHELL_CMD(tpc, NULL, "Run TCP2 client test", cmd_run_tcp2_test),
 		SHELL_CMD(http_download, NULL, "Run HTTP download test", cmd_run_http_download_test),
 		SHELL_SUBCMD_SET_END
 );

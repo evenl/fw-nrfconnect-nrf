@@ -211,6 +211,8 @@ void download_client_pause(struct download_client *client);
  * @brief Resume the download.
  *
  * @param[in] client	Client instance.
+ *
+ * @retval int Zero on success, a negative error code otherwise.
  */
 void download_client_resume(struct download_client *client);
 
