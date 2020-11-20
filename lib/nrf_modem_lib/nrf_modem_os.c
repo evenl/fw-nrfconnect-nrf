@@ -362,6 +362,16 @@ void nrf_modem_os_application_irq_clear(void)
 	NVIC_ClearPendingIRQ(NRF_MODEM_APPLICATION_IRQ);
 }
 
+void nrf_modem_os_application_irq_disable(void)
+{
+	NVIC_DisableIRQ(NRF_MODEM_APPLICATION_IRQ);
+}
+
+void nrf_modem_os_application_irq_enable(void)
+{
+	NVIC_EnableIRQ(NRF_MODEM_APPLICATION_IRQ);
+}
+
 void nrf_modem_os_trace_irq_set(void)
 {
 	NVIC_SetPendingIRQ(TRACE_IRQ);
