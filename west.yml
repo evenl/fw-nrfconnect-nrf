@@ -33,6 +33,8 @@ manifest:
       url-base: https://github.com/nanopb
     - name: alexa
       url-base: https://github.com/alexa
+    - name: modemlib
+      url-base: https://github.com/NordicPlayground/
 
   # If not otherwise specified, the projects below should be obtained
   # from the ncs remote.
@@ -126,6 +128,12 @@ manifest:
       path: modules/alexa-embedded
       revision: face92d8c62184832793f518bb1f19379538c5c1
       remote: alexa
+
+    - name: modemlib
+      path: libmodem
+      repo-path: libmodem
+      revision: master
+      remote: modemlib
 
   # West-related configuration for the nrf repository.
   self:

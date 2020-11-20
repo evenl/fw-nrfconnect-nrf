@@ -56,6 +56,16 @@ config NRF_MODEM_LIB_SENDMSG_BUF_SIZE
 	  the repacked message would not fit into the buffer, `sendmsg` sends
 	  each message part separately.
 
+comment "API variants"
+
+config NRF_MODEM_LIB_GNSS_API_V1
+	bool "Use GNSS API version 1 (deprecated)"
+	default n
+	help
+	  The socket based GNSS API has been deprecated, but can be enabled by
+	  setting this parameter to yes, otherwize will the new GNSS API be
+	  used.
+
 comment "Heap and buffers"
 
 config NRF_MODEM_LIB_HEAP_SIZE

@@ -35,17 +35,19 @@ static int init_ret;
 
 static const nrf_modem_init_params_t init_params = {
 	.ipc_irq_prio = NRF_MODEM_NETWORK_IRQ_PRIORITY,
-	.shmem.ctrl = {
-		.base = PM_NRF_MODEM_LIB_CTRL_ADDRESS,
-		.size = CONFIG_NRF_MODEM_LIB_SHMEM_CTRL_SIZE,
-	},
-	.shmem.tx = {
-		.base = PM_NRF_MODEM_LIB_TX_ADDRESS,
-		.size = CONFIG_NRF_MODEM_LIB_SHMEM_TX_SIZE,
-	},
-	.shmem.rx = {
-		.base = PM_NRF_MODEM_LIB_RX_ADDRESS,
-		.size = CONFIG_NRF_MODEM_LIB_SHMEM_RX_SIZE,
+	.memory_config = {
+		.ctrl = {
+			.base = PM_NRF_MODEM_LIB_CTRL_ADDRESS,
+			.size = CONFIG_NRF_MODEM_LIB_SHMEM_CTRL_SIZE,
+		},
+		.tx = {
+			.base = PM_NRF_MODEM_LIB_TX_ADDRESS,
+			.size = CONFIG_NRF_MODEM_LIB_SHMEM_TX_SIZE,
+		},
+		.rx = {
+			.base = PM_NRF_MODEM_LIB_RX_ADDRESS,
+			.size = CONFIG_NRF_MODEM_LIB_SHMEM_RX_SIZE,
+		},
 	},
 #if CONFIG_NRF_MODEM_LIB_TRACE_ENABLED
 	.shmem.trace = {
@@ -53,6 +55,13 @@ static const nrf_modem_init_params_t init_params = {
 		.size = CONFIG_NRF_MODEM_LIB_SHMEM_TRACE_SIZE,
 	},
 #endif
+	.api_config = {
+#if CONFIG_NRF_MODEM_LIB_GNSS_API_V1
+		.gnss_version = NRF_GNSS_API_VERSION_1,
+#else
+		.gnss_version = NRF_GNSS_API_VERSION_2,
+#endif
+	},
 };
 
 static int _nrf_modem_lib_init(const struct device *unused)
