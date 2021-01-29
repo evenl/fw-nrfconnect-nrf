@@ -10,6 +10,8 @@
 #include <net/socket.h>
 #include <init.h>
 #include <nrf_modem_limits.h>
+#include <errno.h>
+#include <string.h>
 
 #include <modem/at_cmd.h>
 #include <modem/nrf_modem_lib.h>
@@ -22,6 +24,8 @@ LOG_MODULE_REGISTER(at_cmd, CONFIG_AT_CMD_LOG_LEVEL);
 #define AT_CMD_ERROR_STR "ERROR\r\n"
 #define AT_CMD_CMS_STR   "+CMS ERROR:"
 #define AT_CMD_CME_STR   "+CME ERROR:"
+
+char *strerror(int errnum);
 
 /* Flags describing an AT command request */
 enum at_cmd_flags {
@@ -263,8 +267,8 @@ static void socket_thread_fn(void *arg1, void *arg2, void *arg3)
 
 				continue;
 			} else {
-				LOG_ERR("AT socket recv failed with err %d",
-					errno);
+				LOG_ERR("AT socket recv failed with err %s",
+					strerror(errno));
 			}
 
 			if ((close(common_socket_fd) == 0) &&
