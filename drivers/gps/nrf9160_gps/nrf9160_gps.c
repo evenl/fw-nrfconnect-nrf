@@ -25,6 +25,8 @@ LOG_MODULE_REGISTER(nrf9160_gps, CONFIG_NRF9160_GPS_LOG_LEVEL);
 #define sv_used_str(x) ((x)?"    used":"not used")
 #define sv_unhealthy_str(x) ((x)?"not healthy":"    healthy")
 
+#define NMEA_STRS_MAX 10 /* Max number of stored NMEA strings */
+
 struct gps_drv_data {
 	const struct device *dev;
 	gps_event_handler_t handler;
@@ -33,6 +35,17 @@ struct gps_drv_data {
 	atomic_t is_active;
 	atomic_t is_shutdown;
 	atomic_t timeout_occurred;
+	atomic_t has_fix;
+	uint64_t fix_timestamp;
+	atomic_t got_evt;
+	char     nmea_strs[NMEA_STRS_MAX][NRF_GNSS_NMEA_MAX_LEN];
+	atomic_t nmea_nxt;
+	atomic_t nmea_fix_idx;
+	nrf_gnss_pvt_data_frame_t  last_pvt;
+#ifdef CONFIG_NRF9160_AGPS
+	nrf_gnss_agps_data_frame_t last_agps;
+#endif
+
 	K_THREAD_STACK_MEMBER(thread_stack,
 			      CONFIG_NRF9160_GPS_THREAD_STACK_SIZE);
 	struct k_thread thread;
@@ -41,6 +54,14 @@ struct gps_drv_data {
 	struct k_sem gps_evt_sem;
 	struct k_delayed_work stop_work;
 	struct k_delayed_work timeout_work;
+	struct k_delayed_work pvt_ntf_work;
+	struct k_delayed_work sat_stats_work;
+	struct k_delayed_work blocked_ntf_work;
+	struct k_delayed_work unblocked_ntf_work;
+	struct k_delayed_work nmea_ntf_work;
+#ifdef CONFIG_NRF9160_AGPS
+	struct k_delayed_work agps_ntf_work;
+#endif
 };
 
 struct nrf9160_gps_config {
@@ -55,9 +76,6 @@ struct nrf9160_gps_config {
 
 /* To keep the GNSS event handler and the GPS thread in sync */
 static struct device *dev_hook;
-static uint64_t fix_timestamp;
-static int      has_fix;
-static int      got_evt;
 
 static void copy_pvt(struct gps_pvt *dest, nrf_gnss_pvt_data_frame_t *src)
 {
@@ -101,7 +119,8 @@ static bool is_fix(nrf_gnss_pvt_data_frame_t *pvt)
 		== NRF_GNSS_PVT_FLAG_FIX_VALID_BIT);
 }
 
-static void print_satellite_stats(nrf_gnss_pvt_data_frame_t *pvt_data)
+static void print_satellite_stats(nrf_gnss_pvt_data_frame_t *pvt_data,
+				  uint64_t fix_timestamp)
 {
 	uint8_t  n_tracked = 0;
 	uint8_t  n_used = 0;
@@ -148,116 +167,80 @@ static void notify_event(const struct device *dev, struct gps_event *evt)
 static void cancel_works(struct gps_drv_data *drv_data)
 {
 	k_delayed_work_cancel(&drv_data->timeout_work);
+	k_delayed_work_cancel(&drv_data->pvt_ntf_work);
+	k_delayed_work_cancel(&drv_data->sat_stats_work);
+	k_delayed_work_cancel(&drv_data->blocked_ntf_work);
+	k_delayed_work_cancel(&drv_data->unblocked_ntf_work);
+	k_delayed_work_cancel(&drv_data->nmea_ntf_work);
+#ifdef CONFIG_NRF9160_AGPS
+	k_delayed_work_cancel(&drv_data->agps_ntf_work);
+#endif
 }
 
 static void nrf91_gnss_event_handler(int event)
 {
 	struct gps_drv_data *drv_data = dev_hook->data;
-	struct gps_event evt = {0};
-
-	static int      operation_blocked; /* Zero initialized by default */
-
-	static char     nmea_strings[10][NRF_GNSS_NMEA_MAX_LEN];
-	static uint32_t nmea_string_cnt = 0;
-	int             idx;
-	static nrf_gnss_pvt_data_frame_t  last_pvt;
-#ifdef CONFIG_NRF9160_AGPS
-	static nrf_gnss_agps_data_frame_t last_agps;
-#endif
+	static int operation_blocked; /* Zero initialized by default */
+	atomic_t nxt;
+	atomic_t idx;
 
 	switch (event) {
 	case NRF_GNSS_PVT_NTF:
-		nrf_gnss_read(&last_pvt, sizeof(last_pvt), event);
-		nmea_string_cnt = 0;
-
-		atomic_clear(&has_fix);
+		atomic_clear(&drv_data->has_fix);
 
 		if (operation_blocked) {
 			/* Avoid spamming the logs and app. */
 			goto out;
 		}
 
-		copy_pvt(&evt.pvt, &last_pvt);
+		nrf_gnss_read(&drv_data->last_pvt, sizeof(drv_data->last_pvt),
+			      event);
 
-		if (is_fix(&last_pvt)) {
-			evt.type = GPS_EVT_PVT_FIX;
-			fix_timestamp = k_uptime_get();
-			atomic_set(&has_fix, true);
-		} else {
-			evt.type = GPS_EVT_PVT;
-		}
-
-		notify_event(dev_hook, &evt);
-		print_satellite_stats(&last_pvt);
+		k_delayed_work_submit(&drv_data->pvt_ntf_work, K_NO_WAIT);
 		break;
 
 	case NRF_GNSS_FIX_NTF:
-		atomic_set(&has_fix, true);
-		nmea_string_cnt = 0;
-		fix_timestamp = k_uptime_get();
+		atomic_set(&drv_data->has_fix, true);
+		drv_data->fix_timestamp = k_uptime_get();
 		break;
 
 	case NRF_GNSS_NMEA_NTF:
-		idx = nmea_string_cnt;
-		nmea_string_cnt = (nmea_string_cnt + 1) % 10;
-		nrf_gnss_read(&nmea_strings[idx],
-			      sizeof(nmea_strings[idx]), event);
+		/* Might get overwritten but will not overflow */
+		idx = atomic_inc(&drv_data->nmea_nxt) % NMEA_STRS_MAX;
+		nxt = atomic_get(&drv_data->nmea_nxt) % NMEA_STRS_MAX;
+		atomic_set(&drv_data->nmea_nxt, nxt);
 
-		memcpy(evt.nmea.buf, nmea_strings[idx],
-		       GPS_NMEA_SENTENCE_MAX_LENGTH);
+		nrf_gnss_read(drv_data->nmea_strs[idx],
+			      GPS_NMEA_SENTENCE_MAX_LENGTH,
+			      event);
 
-		/* Don't count null terminator. */
-		evt.nmea.len = strlen(evt.nmea.buf);
-
-		if (atomic_get(&has_fix)) {
-			LOG_DBG("NMEA fix data: %s", evt.nmea.buf);
-			evt.type = GPS_EVT_NMEA_FIX;
-		} else {
-			evt.type = GPS_EVT_NMEA;
-		}
-
-		notify_event(dev_hook, &evt);
+		drv_data->nmea_fix_idx = idx;
+		k_delayed_work_submit(&drv_data->nmea_ntf_work, K_NO_WAIT);
 		break;
 
 	case NRF_GNSS_AGPS_NTF:
 #ifdef CONFIG_NRF9160_AGPS
-		nrf_gnss_read(&last_agps, sizeof(last_agps), event);
+		nrf_gnss_read(&drv_data->last_agps,
+				sizeof(drv_data->last_agps),
+				event);
 
-		evt.type = GPS_EVT_AGPS_DATA_NEEDED;
-		evt.agps_request.sv_mask_ephe = last_agps.sv_mask_ephe;
-		evt.agps_request.sv_mask_alm = last_agps.sv_mask_alm;
-		evt.agps_request.utc = last_agps.data_flags &
-				BIT(NRF_GNSS_AGPS_GPS_UTC_REQUEST) ? 1 : 0;
-		evt.agps_request.klobuchar = last_agps.data_flags &
-				BIT(NRF_GNSS_AGPS_KLOBUCHAR_REQUEST) ? 1 : 0;
-		evt.agps_request.nequick = last_agps.data_flags &
-				BIT(NRF_GNSS_AGPS_NEQUICK_REQUEST) ? 1 : 0;
-		evt.agps_request.system_time_tow = last_agps.data_flags &
-				BIT(NRF_GNSS_AGPS_SYS_TIME_AND_SV_TOW_REQUEST) ?
-						1 : 0;
-		evt.agps_request.position = last_agps.data_flags &
-				BIT(NRF_GNSS_AGPS_POSITION_REQUEST) ? 1 : 0;
-		evt.agps_request.integrity = last_agps.data_flags &
-				BIT(NRF_GNSS_AGPS_INTEGRITY_REQUEST) ? 1 : 0;
-
-		notify_event(dev_hook, &evt);
+		k_delayed_work_submit(&drv_data->agps_ntf_work, K_NO_WAIT);
 #endif /* CONFIG_NRF9160_AGPS */
 		break;
 	case NRF_GNSS_BLOCKED_NTF:
 		operation_blocked = true;
-		evt.type = GPS_EVT_OPERATION_BLOCKED;
-		notify_event(dev_hook, &evt);
+		k_delayed_work_submit(&drv_data->blocked_ntf_work, K_NO_WAIT);
 		break;
 	case NRF_GNSS_UNBLOCKED_NTF:
 		operation_blocked = false;
-		evt.type = GPS_EVT_OPERATION_UNBLOCKED;
-		notify_event(dev_hook, &evt);
+		k_delayed_work_submit(&drv_data->unblocked_ntf_work, K_NO_WAIT);
+		break;
 	default:
 		break;
 	}
 
 out:
-	atomic_set(&got_evt, true);
+	atomic_set(&drv_data->got_evt, true);
 	k_sem_give(&drv_data->gps_evt_sem);
 }
 
@@ -268,7 +251,7 @@ static void nrf91_gnss_thread(int dev_ptr)
 	struct gps_event evt = {
 		.type = GPS_EVT_SEARCH_STARTED
 	};
-	atomic_clear(&has_fix);
+	atomic_clear(&drv_data->has_fix);
 
 wait:
 	k_sem_take(&drv_data->thread_run_sem, K_FOREVER);
@@ -281,7 +264,7 @@ wait:
 		 *  or the GPS has gotten a fix. This check makes sure that
 		 *  a GPS_EVT_SEARCH_TIMEOUT is not propagated upon a fix.
 		 */
-		if (!atomic_get(&has_fix)) {
+		if (!atomic_get(&drv_data->has_fix)) {
 			k_delayed_work_submit(&drv_data->timeout_work,
 					      K_SECONDS(5));
 		}
@@ -290,7 +273,7 @@ wait:
 
 		k_delayed_work_cancel(&drv_data->timeout_work);
 
-		if (!atomic_clear(&got_evt)) {
+		if (!atomic_clear(&drv_data->got_evt)) {
 			/* Is the GPS stopped, causing this error? */
 			if (!atomic_get(&drv_data->is_active)) {
 				goto wait;
@@ -549,6 +532,12 @@ static int setup(const struct device *dev)
 
 	atomic_set(&drv_data->is_active, 0);
 	atomic_set(&drv_data->timeout_occurred, 0);
+	drv_data->fix_timestamp = 0;
+	atomic_clear(&drv_data->got_evt);
+	atomic_clear(&drv_data->has_fix);
+	atomic_clear(&drv_data->nmea_nxt);
+	atomic_clear(&drv_data->nmea_fix_idx);
+	memset(&drv_data->last_pvt, 0, sizeof(nrf_gnss_pvt_data_frame_t));
 
 	return 0;
 }
@@ -630,6 +619,112 @@ static void stop_work_fn(struct k_work *work)
 	struct gps_event evt = {
 		.type = GPS_EVT_SEARCH_STOPPED
 	};
+
+	notify_event(dev, &evt);
+}
+
+static void pvt_ntf_work_fn(struct k_work *work)
+{
+	struct gps_drv_data *drv_data =
+		CONTAINER_OF(work, struct gps_drv_data, pvt_ntf_work);
+	const struct device *dev = drv_data->dev;
+	struct gps_event evt = {};
+
+	copy_pvt(&evt.pvt, &drv_data->last_pvt);
+
+	if (is_fix(&drv_data->last_pvt)) {
+		evt.type = GPS_EVT_PVT_FIX;
+		drv_data->fix_timestamp = k_uptime_get();
+		atomic_set(&drv_data->has_fix, true);
+	} else {
+		evt.type = GPS_EVT_PVT;
+	}
+
+	notify_event(dev, &evt);
+
+	k_delayed_work_submit(&drv_data->sat_stats_work, K_SECONDS(1));
+}
+
+#ifdef CONFIG_NRF9160_AGPS
+static void agps_ntf_work_fn(struct k_work *work)
+{
+	struct gps_drv_data *drv_data =
+			CONTAINER_OF(work, struct gps_drv_data, agps_ntf_work);
+	const struct device *dev = drv_data->dev;
+	struct gps_event evt = {};
+
+	evt.type = GPS_EVT_AGPS_DATA_NEEDED;
+	evt.agps_request.sv_mask_ephe = drv_data->last_agps.sv_mask_ephe;
+	evt.agps_request.sv_mask_alm = drv_data->last_agps.sv_mask_alm;
+	evt.agps_request.utc = drv_data->last_agps.data_flags &
+			BIT(NRF_GNSS_AGPS_GPS_UTC_REQUEST) ? 1 : 0;
+	evt.agps_request.klobuchar = drv_data->last_agps.data_flags &
+			BIT(NRF_GNSS_AGPS_KLOBUCHAR_REQUEST) ? 1 : 0;
+	evt.agps_request.nequick = drv_data->last_agps.data_flags &
+			BIT(NRF_GNSS_AGPS_NEQUICK_REQUEST) ? 1 : 0;
+	evt.agps_request.system_time_tow = drv_data->last_agps.data_flags &
+			BIT(NRF_GNSS_AGPS_SYS_TIME_AND_SV_TOW_REQUEST) ?
+					1 : 0;
+	evt.agps_request.position = drv_data->last_agps.data_flags &
+			BIT(NRF_GNSS_AGPS_POSITION_REQUEST) ? 1 : 0;
+	evt.agps_request.integrity = drv_data->last_agps.data_flags &
+			BIT(NRF_GNSS_AGPS_INTEGRITY_REQUEST) ? 1 : 0;
+
+	notify_event(dev, &evt);
+}
+#endif
+
+static void sat_stats_work_fn(struct k_work *work)
+{
+	struct gps_drv_data *drv_data =
+		CONTAINER_OF(work, struct gps_drv_data, sat_stats_work);
+
+	/* Stats get printed already by this call */
+	k_delayed_work_cancel(&drv_data->sat_stats_work);
+
+	print_satellite_stats(&drv_data->last_pvt, drv_data->fix_timestamp);
+}
+
+static void nmea_ntf_work_fn(struct k_work *work)
+{
+	struct gps_drv_data *drv_data =
+		CONTAINER_OF(work, struct gps_drv_data, nmea_ntf_work);
+	const struct device *dev = drv_data->dev;
+	struct gps_event evt;
+	int idx = drv_data->nmea_fix_idx;
+
+	memcpy(evt.nmea.buf, drv_data->nmea_strs[idx],
+	       GPS_NMEA_SENTENCE_MAX_LENGTH);
+
+	/* Don't count null terminator. */
+	evt.nmea.len = strlen(evt.nmea.buf);
+
+	if (atomic_get(&drv_data->has_fix)) {
+		LOG_DBG("NMEA fix data: %s", evt.nmea.buf);
+		evt.type = GPS_EVT_NMEA_FIX;
+	} else {
+		evt.type = GPS_EVT_NMEA;
+	}
+
+	notify_event(dev, &evt);
+}
+
+static void blocked_ntf_work_fn(struct k_work *work)
+{
+	struct gps_drv_data *drv_data =
+		CONTAINER_OF(work, struct gps_drv_data, blocked_ntf_work);
+	const struct device *dev = drv_data->dev;
+	struct gps_event evt = { .type = GPS_EVT_OPERATION_BLOCKED};
+
+	notify_event(dev, &evt);
+}
+
+static void unblocked_ntf_work_fn(struct k_work *work)
+{
+	struct gps_drv_data *drv_data =
+		CONTAINER_OF(work, struct gps_drv_data, unblocked_ntf_work);
+	const struct device *dev = drv_data->dev;
+	struct gps_event evt = { .type = GPS_EVT_OPERATION_UNBLOCKED};
 
 	notify_event(dev, &evt);
 }
@@ -719,6 +814,15 @@ static int init(const struct device *dev, gps_event_handler_t handler)
 
 	k_delayed_work_init(&drv_data->stop_work, stop_work_fn);
 	k_delayed_work_init(&drv_data->timeout_work, timeout_work_fn);
+	k_delayed_work_init(&drv_data->pvt_ntf_work, pvt_ntf_work_fn);
+	k_delayed_work_init(&drv_data->sat_stats_work, sat_stats_work_fn);
+	k_delayed_work_init(&drv_data->nmea_ntf_work, nmea_ntf_work_fn);
+	k_delayed_work_init(&drv_data->blocked_ntf_work, blocked_ntf_work_fn);
+	k_delayed_work_init(&drv_data->unblocked_ntf_work,
+			    unblocked_ntf_work_fn);
+#ifdef CONFIG_NRF9160_AGPS
+	k_delayed_work_init(&drv_data->agps_ntf_work, agps_ntf_work_fn);
+#endif
 	k_sem_init(&drv_data->thread_run_sem, 0, 1);
 	k_sem_init(&drv_data->gps_evt_sem, 0, 1);
 
