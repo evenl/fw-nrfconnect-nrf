@@ -8,6 +8,7 @@
 #include <drivers/gpio.h>
 #include <drivers/gps.h>
 #include <init.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,10 +22,6 @@
 
 LOG_MODULE_REGISTER(nrf9160_gps, CONFIG_NRF9160_GPS_LOG_LEVEL);
 
-/* Aligned strings describing satellite states based on flags */
-#define sv_used_str(x) ((x)?"    used":"not used")
-#define sv_unhealthy_str(x) ((x)?"not healthy":"    healthy")
-
 #define NMEA_STRS_MAX 10 /* Max number of stored NMEA strings */
 
 struct gps_drv_data {
@@ -36,7 +33,7 @@ struct gps_drv_data {
 	atomic_t is_shutdown;
 	atomic_t timeout_occurred;
 	atomic_t has_fix;
-	uint64_t fix_timestamp;
+	int64_t  fix_timestamp;
 	atomic_t got_evt;
 	char     nmea_strs[NMEA_STRS_MAX][NRF_GNSS_NMEA_MAX_LEN];
 	atomic_t nmea_nxt;
@@ -119,8 +116,8 @@ static bool is_fix(nrf_gnss_pvt_data_frame_t *pvt)
 		== NRF_GNSS_PVT_FLAG_FIX_VALID_BIT);
 }
 
-static void print_satellite_stats(nrf_gnss_pvt_data_frame_t *pvt_data,
-				  uint64_t fix_timestamp)
+static void tracking_stats(nrf_gnss_pvt_data_frame_t *pvt_data,
+				  int64_t fix_timestamp)
 {
 	uint8_t  n_tracked = 0;
 	uint8_t  n_used = 0;
@@ -141,18 +138,24 @@ static void print_satellite_stats(nrf_gnss_pvt_data_frame_t *pvt_data,
 			if (unhealthy) {
 				n_unhealthy++;
 			}
-
-			LOG_DBG("Tracking SV %2u: %s, %s", sv,
-				sv_used_str(used),
-				sv_unhealthy_str(unhealthy));
 		}
 	}
 
-	LOG_DBG("Tracking: %d Using: %d Unhealthy: %d", n_tracked,
-							n_used,
-							n_unhealthy);
-	LOG_DBG("Seconds since last fix %lld",
-			(k_uptime_get() - fix_timestamp) / 1000);
+	int64_t present = k_uptime_get();
+
+	if (fix_timestamp < present) {
+
+		LOG_DBG("%2u SVs:  %2u used, %2u unhealthy, %lld %s",
+			n_tracked, n_used, n_unhealthy,
+			((present - fix_timestamp) / MSEC_PER_SEC),
+			"secs since last fix");
+	} else {
+
+		LOG_DBG("%2u SVs:  %2u used, %2u unhealthy, %lld %s",
+			n_tracked, n_used, n_unhealthy,
+			(present / MSEC_PER_SEC),
+			"secs and no fix");
+	}
 }
 
 static void notify_event(const struct device *dev, struct gps_event *evt)
@@ -532,7 +535,7 @@ static int setup(const struct device *dev)
 
 	atomic_set(&drv_data->is_active, 0);
 	atomic_set(&drv_data->timeout_occurred, 0);
-	drv_data->fix_timestamp = 0;
+	drv_data->fix_timestamp = INT64_MAX; /* In the future -> no fix yet */
 	atomic_clear(&drv_data->got_evt);
 	atomic_clear(&drv_data->has_fix);
 	atomic_clear(&drv_data->nmea_nxt);
@@ -642,7 +645,9 @@ static void pvt_ntf_work_fn(struct k_work *work)
 
 	notify_event(dev, &evt);
 
-	k_delayed_work_submit(&drv_data->sat_stats_work, K_SECONDS(1));
+	if (!k_delayed_work_remaining_get(&drv_data->sat_stats_work)) {
+		k_delayed_work_submit(&drv_data->sat_stats_work, K_SECONDS(1));
+	}
 }
 
 #ifdef CONFIG_NRF9160_AGPS
@@ -682,7 +687,7 @@ static void sat_stats_work_fn(struct k_work *work)
 	/* Stats get printed already by this call */
 	k_delayed_work_cancel(&drv_data->sat_stats_work);
 
-	print_satellite_stats(&drv_data->last_pvt, drv_data->fix_timestamp);
+	tracking_stats(&drv_data->last_pvt, drv_data->fix_timestamp);
 }
 
 static void nmea_ntf_work_fn(struct k_work *work)
