@@ -34,10 +34,12 @@ struct gps_drv_data {
 	atomic_t timeout_occurred;
 	atomic_t has_fix;
 	int64_t  fix_timestamp;
+	int32_t  fix_interval;
 	atomic_t got_evt;
 	char     nmea_strs[NMEA_STRS_MAX][NRF_GNSS_NMEA_MAX_LEN];
 	atomic_t nmea_nxt;
 	atomic_t nmea_fix_idx;
+	atomic_t blocked;
 	nrf_gnss_pvt_data_frame_t  last_pvt;
 #ifdef CONFIG_NRF9160_AGPS
 	nrf_gnss_agps_data_frame_t last_agps;
@@ -183,7 +185,6 @@ static void cancel_works(struct gps_drv_data *drv_data)
 static void nrf91_gnss_event_handler(int event)
 {
 	struct gps_drv_data *drv_data = dev_hook->data;
-	static int operation_blocked; /* Zero initialized by default */
 	atomic_t nxt;
 	atomic_t idx;
 
@@ -191,7 +192,7 @@ static void nrf91_gnss_event_handler(int event)
 	case NRF_GNSS_PVT_NTF:
 		atomic_clear(&drv_data->has_fix);
 
-		if (operation_blocked) {
+		if (atomic_get(&drv_data->blocked)) {
 			/* Avoid spamming the logs and app. */
 			goto out;
 		}
@@ -231,11 +232,12 @@ static void nrf91_gnss_event_handler(int event)
 #endif /* CONFIG_NRF9160_AGPS */
 		break;
 	case NRF_GNSS_BLOCKED_NTF:
-		operation_blocked = true;
+		atomic_set(&drv_data->blocked, true);
+		k_delayed_work_cancel(&drv_data->timeout_work);
 		k_delayed_work_submit(&drv_data->blocked_ntf_work, K_NO_WAIT);
 		break;
 	case NRF_GNSS_UNBLOCKED_NTF:
-		operation_blocked = false;
+		atomic_clear(&drv_data->blocked);
 		k_delayed_work_submit(&drv_data->unblocked_ntf_work, K_NO_WAIT);
 		break;
 	default:
@@ -255,6 +257,7 @@ static void nrf91_gnss_thread(int dev_ptr)
 		.type = GPS_EVT_SEARCH_STARTED
 	};
 	atomic_clear(&drv_data->has_fix);
+	uint32_t timeout = drv_data->fix_interval ? drv_data->fix_interval : 5;
 
 wait:
 	k_sem_take(&drv_data->thread_run_sem, K_FOREVER);
@@ -269,10 +272,10 @@ wait:
 		 */
 		if (!atomic_get(&drv_data->has_fix)) {
 			k_delayed_work_submit(&drv_data->timeout_work,
-					      K_SECONDS(5));
+					      K_SECONDS(timeout));
 		}
 
-		k_sem_take(&drv_data->gps_evt_sem, K_SECONDS(10));
+		k_sem_take(&drv_data->gps_evt_sem, K_SECONDS(timeout));
 
 		k_delayed_work_cancel(&drv_data->timeout_work);
 
@@ -282,7 +285,12 @@ wait:
 				goto wait;
 			}
 
-			/* TODO : check that if the modem is asleep */
+			/* TODO : check that if the modem is asleep
+			 * This is a workaround.
+			 */
+			if (atomic_get(&drv_data->blocked)) {
+				k_sleep(K_SECONDS(timeout));
+			}
 
 			continue;
 		}
@@ -519,6 +527,7 @@ static int start(const struct device *dev, struct gps_config *cfg)
 
 
 	atomic_set(&drv_data->is_active, 1);
+	atomic_set(&drv_data->fix_interval, gnss_cfg.fix_interval);
 	atomic_set(&drv_data->timeout_occurred, 0);
 	k_sem_give(&drv_data->thread_run_sem);
 
@@ -540,6 +549,7 @@ static int setup(const struct device *dev)
 	atomic_clear(&drv_data->has_fix);
 	atomic_clear(&drv_data->nmea_nxt);
 	atomic_clear(&drv_data->nmea_fix_idx);
+	atomic_set(&drv_data->blocked, false);
 	memset(&drv_data->last_pvt, 0, sizeof(nrf_gnss_pvt_data_frame_t));
 
 	return 0;
@@ -742,8 +752,11 @@ static void timeout_work_fn(struct k_work *work)
 	struct gps_event evt = {
 		.type = GPS_EVT_SEARCH_TIMEOUT
 	};
-	atomic_set(&drv_data->timeout_occurred, 1);
-	notify_event(dev, &evt);
+
+	if (!atomic_get(&drv_data->blocked)) {
+		atomic_set(&drv_data->timeout_occurred, 1);
+		notify_event(dev, &evt);
+	}
 }
 
 static int agps_write(const struct device *dev, enum gps_agps_type type,
