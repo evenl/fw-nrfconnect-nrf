@@ -257,7 +257,7 @@ static void nrf91_gnss_thread(int dev_ptr)
 		.type = GPS_EVT_SEARCH_STARTED
 	};
 	atomic_clear(&drv_data->has_fix);
-	uint32_t timeout = drv_data->fix_interval ? drv_data->fix_interval : 5;
+	uint32_t timeout;
 
 wait:
 	k_sem_take(&drv_data->thread_run_sem, K_FOREVER);
@@ -266,6 +266,8 @@ wait:
 	notify_event(dev, &evt);
 
 	while (true) {
+		timeout = drv_data->fix_interval ? drv_data->fix_interval : 10;
+
 		/** There is no way of knowing if an event has not been received
 		 *  or the GPS has gotten a fix. This check makes sure that
 		 *  a GPS_EVT_SEARCH_TIMEOUT is not propagated upon a fix.
@@ -275,24 +277,23 @@ wait:
 					      K_SECONDS(timeout));
 		}
 
-		k_sem_take(&drv_data->gps_evt_sem, K_SECONDS(timeout));
+		k_sem_take(&drv_data->gps_evt_sem, K_SECONDS(timeout+1));
 
+		/* No need for timeout if an event occurred early enough */
 		k_delayed_work_cancel(&drv_data->timeout_work);
 
-		if (!atomic_clear(&drv_data->got_evt)) {
-			/* Is the GPS stopped, causing this error? */
-			if (!atomic_get(&drv_data->is_active)) {
-				goto wait;
-			}
-
-			/* TODO : check that if the modem is asleep
-			 * This is a workaround.
-			 */
-			if (atomic_get(&drv_data->blocked)) {
-				k_sleep(K_SECONDS(timeout));
-			}
-
+		if (atomic_clear(&drv_data->got_evt)) {
 			continue;
+		}
+
+		/* Is the GPS stopped, causing timeout? */
+		if (!atomic_get(&drv_data->is_active)) {
+			goto wait;
+		}
+
+		/* If blocked lets wait at least for one fix interval */
+		if (!atomic_get(&drv_data->blocked)) {
+			k_sleep(K_SECONDS(drv_data->fix_interval));
 		}
 	}
 }
