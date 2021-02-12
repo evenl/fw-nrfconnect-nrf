@@ -700,14 +700,8 @@ static void gps_handler(const struct device *dev, struct gps_event *evt)
 			gps_cloud_data.tag = 0x1;
 		}
 
-		int64_t gps_time_from_start_to_fix_seconds = (k_uptime_get() -
-				gps_last_search_start_time) / 1000;
 		ui_led_set_pattern(UI_LED_GPS_FIX);
 		gps_control_set_active(false);
-		LOG_INF("GPS will be started in %lld seconds",
-			CONFIG_GPS_CONTROL_FIX_TRY_TIME -
-			gps_time_from_start_to_fix_seconds +
-			gps_control_get_gps_reporting_interval());
 
 		k_work_submit_to_queue(&application_work_q,
 				       &send_gps_data_work);
