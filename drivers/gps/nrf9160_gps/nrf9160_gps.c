@@ -55,9 +55,11 @@ struct gps_drv_data {
 	struct k_delayed_work timeout_work;
 	struct k_delayed_work pvt_ntf_work;
 	struct k_delayed_work sat_stats_work;
+	struct k_work fix_ntf_work;
 	struct k_delayed_work blocked_ntf_work;
 	struct k_delayed_work unblocked_ntf_work;
 	struct k_delayed_work nmea_ntf_work;
+	struct k_delayed_work bump_priority_work;
 #ifdef CONFIG_NRF9160_AGPS
 	struct k_delayed_work agps_ntf_work;
 #endif
@@ -172,6 +174,7 @@ static void notify_event(const struct device *dev, struct gps_event *evt)
 static void cancel_works(struct gps_drv_data *drv_data)
 {
 	k_delayed_work_cancel(&drv_data->timeout_work);
+	k_delayed_work_cancel(&drv_data->bump_priority_work);
 	k_delayed_work_cancel(&drv_data->pvt_ntf_work);
 	k_delayed_work_cancel(&drv_data->sat_stats_work);
 	k_delayed_work_cancel(&drv_data->blocked_ntf_work);
@@ -197,15 +200,13 @@ static void nrf91_gnss_event_handler(int event)
 			goto out;
 		}
 
-		nrf_gnss_read(&drv_data->last_pvt, sizeof(drv_data->last_pvt),
-			      event);
-
 		k_delayed_work_submit(&drv_data->pvt_ntf_work, K_NO_WAIT);
 		break;
 
 	case NRF_GNSS_FIX_NTF:
 		atomic_set(&drv_data->has_fix, true);
 		drv_data->fix_timestamp = k_uptime_get();
+		k_work_submit(&drv_data->fix_ntf_work);
 		break;
 
 	case NRF_GNSS_NMEA_NTF:
@@ -233,7 +234,6 @@ static void nrf91_gnss_event_handler(int event)
 		break;
 	case NRF_GNSS_BLOCKED_NTF:
 		atomic_set(&drv_data->blocked, true);
-		k_delayed_work_cancel(&drv_data->timeout_work);
 		k_delayed_work_submit(&drv_data->blocked_ntf_work, K_NO_WAIT);
 		break;
 	case NRF_GNSS_UNBLOCKED_NTF:
@@ -443,27 +443,33 @@ static int parse_cfg(struct gps_config *cfg_src,
 
 static int nrf91_gnss_ctrl(uint32_t ctrl, struct nrf_gnss_config *config)
 {
+	int32_t err;
+
 	if (ctrl == NRF_GNSS_CMD_START) {
-		int err = nrf_gnss_set_configuration(config);
-
-		err |= nrf_gnss_set_handler(nrf91_gnss_event_handler);
-
+		err = nrf_gnss_set_configuration(config);
 		if (err) {
-			LOG_ERR("Failed to initialize GNSS interface");
+			LOG_ERR("Failed to initialize");
+			return -1;
+		}
+
+		err = nrf_gnss_set_handler(nrf91_gnss_event_handler);
+		if (err) {
+			LOG_ERR("Failed to set event handler");
 			return -1;
 		}
 
 		if (nrf_gnss_send_cmd(ctrl, 0) != 0) {
-			LOG_ERR("Failed to start GPS\n");
+			LOG_ERR("Failed to start");
 			return -1;
 		}
-	}
 
-	if (ctrl == NRF_GNSS_CMD_STOP) {
+	} else if (ctrl == NRF_GNSS_CMD_STOP) {
 		if (nrf_gnss_send_cmd(ctrl, 0) != 0) {
-			LOG_ERR("Failed to stop GPS\n");
+			LOG_ERR("Failed to stop");
 			return -1;
 		}
+	} else {
+		__ASSERT(false, "UNSUPPORTED command");
 	}
 
 	return 0;
@@ -522,8 +528,7 @@ static int start(const struct device *dev, struct gps_config *cfg)
 
 	err = nrf91_gnss_ctrl(NRF_GNSS_CMD_START, &gnss_cfg);
 	if (err) {
-		LOG_ERR("Failed to initialize GNSS interface");
-		return -1;
+		return err;
 	}
 
 
@@ -644,6 +649,10 @@ static void pvt_ntf_work_fn(struct k_work *work)
 	const struct device *dev = drv_data->dev;
 	struct gps_event evt = {};
 
+	nrf_gnss_read(&drv_data->last_pvt,
+		      sizeof(drv_data->last_pvt),
+		      NRF_GNSS_PVT_NTF);
+
 	copy_pvt(&evt.pvt, &drv_data->last_pvt);
 
 	if (is_fix(&drv_data->last_pvt)) {
@@ -658,6 +667,18 @@ static void pvt_ntf_work_fn(struct k_work *work)
 
 	if (!k_delayed_work_remaining_get(&drv_data->sat_stats_work)) {
 		k_delayed_work_submit(&drv_data->sat_stats_work, K_SECONDS(1));
+	}
+}
+
+static void fix_ntf_work_fn(struct k_work *work)
+{
+	(void)work;
+
+	/* Fix obtained, no need for increased priority anymore */
+	if (nrf_gnss_send_cmd(NRF_GNSS_CMD_DISABLE_PRIORITY_MODE, 0) != 0) {
+		LOG_ERR("Failed to restore normal GPS priority");
+	} else {
+		LOG_DBG("GPS priority normal");
 	}
 }
 
@@ -732,6 +753,12 @@ static void blocked_ntf_work_fn(struct k_work *work)
 	const struct device *dev = drv_data->dev;
 	struct gps_event evt = { .type = GPS_EVT_OPERATION_BLOCKED};
 
+	k_delayed_work_cancel(&drv_data->timeout_work);
+	k_delayed_work_cancel(&drv_data->unblocked_ntf_work);
+
+	k_delayed_work_submit(&drv_data->bump_priority_work,
+		K_SECONDS(CONFIG_NRF9160_GPS_PRIORITY_WINDOW_TIMEOUT_SEC));
+
 	notify_event(dev, &evt);
 }
 
@@ -741,6 +768,8 @@ static void unblocked_ntf_work_fn(struct k_work *work)
 		CONTAINER_OF(work, struct gps_drv_data, unblocked_ntf_work);
 	const struct device *dev = drv_data->dev;
 	struct gps_event evt = { .type = GPS_EVT_OPERATION_UNBLOCKED};
+
+	k_delayed_work_cancel(&drv_data->bump_priority_work);
 
 	notify_event(dev, &evt);
 }
@@ -757,6 +786,17 @@ static void timeout_work_fn(struct k_work *work)
 	if (!atomic_get(&drv_data->blocked)) {
 		atomic_set(&drv_data->timeout_occurred, 1);
 		notify_event(dev, &evt);
+	}
+}
+
+static void bump_priority_work_fn(struct k_work *work)
+{
+	(void)work;
+
+	if (nrf_gnss_send_cmd(NRF_GNSS_CMD_ENABLE_PRIORITY_MODE, 0) != 0) {
+		LOG_ERR("Failed to set GPS priority");
+	} else {
+		LOG_DBG("GPS priority increased");
 	}
 }
 
@@ -832,8 +872,11 @@ static int init(const struct device *dev, gps_event_handler_t handler)
 	}
 
 	k_delayed_work_init(&drv_data->stop_work, stop_work_fn);
+	k_delayed_work_init(&drv_data->bump_priority_work,
+			bump_priority_work_fn);
 	k_delayed_work_init(&drv_data->timeout_work, timeout_work_fn);
 	k_delayed_work_init(&drv_data->pvt_ntf_work, pvt_ntf_work_fn);
+	k_work_init(&drv_data->fix_ntf_work, fix_ntf_work_fn);
 	k_delayed_work_init(&drv_data->sat_stats_work, sat_stats_work_fn);
 	k_delayed_work_init(&drv_data->nmea_ntf_work, nmea_ntf_work_fn);
 	k_delayed_work_init(&drv_data->blocked_ntf_work, blocked_ntf_work_fn);
